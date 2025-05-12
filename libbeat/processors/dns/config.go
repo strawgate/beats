@@ -30,7 +30,7 @@ import (
 
 // config defines the configuration options for the DNS processor.
 type config struct {
-	cacheConfig  `config:",inline"`
+	CacheConfig  `config:",inline"`
 	Nameservers  []string      `config:"nameservers"`              // Required on Windows. /etc/resolv.conf is used if none are given.
 	Timeout      time.Duration `config:"timeout"`                  // Per request timeout (with 2 nameservers the total timeout would be 2x).
 	Type         queryType     `config:"type" validate:"required"` // One of A, AAAA, TXT or PTR (or reverse).
@@ -112,14 +112,14 @@ func (qt *queryType) Unpack(v string) error {
 	return nil
 }
 
-// cacheConfig defines the success and failure caching parameters.
-type cacheConfig struct {
-	SuccessCache cacheSettings `config:"success_cache"`
-	FailureCache cacheSettings `config:"failure_cache"`
+// CacheConfig defines the success and failure caching parameters.
+type CacheConfig struct {
+	SuccessCache CacheSettings `config:"success_cache"`
+	FailureCache CacheSettings `config:"failure_cache"`
 }
 
-// cacheSettings define the caching behavior for an individual cache.
-type cacheSettings struct {
+// CacheSettings define the caching behavior for an individual cache.
+type CacheSettings struct {
 	// TTL value for items in cache. Not used for success because we use TTL
 	// from the DNS record.
 	TTL time.Duration `config:"ttl"`
@@ -159,8 +159,8 @@ func (c *config) Validate() error {
 	return nil
 }
 
-// Validate validates the data contained in the cacheConfig.
-func (c *cacheConfig) Validate() error {
+// Validate validates the data contained in the CacheConfig.
+func (c *CacheConfig) Validate() error {
 	if c.SuccessCache.MinTTL <= 0 {
 		return fmt.Errorf("success_cache.min_ttl must be > 0")
 	}
@@ -187,13 +187,13 @@ func (c *cacheConfig) Validate() error {
 
 func defaultConfig() config {
 	return config{
-		cacheConfig: cacheConfig{
-			SuccessCache: cacheSettings{
+		CacheConfig: CacheConfig{
+			SuccessCache: CacheSettings{
 				MinTTL:          time.Minute,
 				InitialCapacity: 1000,
 				MaxCapacity:     10000,
 			},
-			FailureCache: cacheSettings{
+			FailureCache: CacheSettings{
 				MinTTL:          time.Minute,
 				TTL:             time.Minute,
 				InitialCapacity: 1000,
