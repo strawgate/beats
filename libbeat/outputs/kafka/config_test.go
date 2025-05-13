@@ -43,6 +43,10 @@ func TestConfigAcceptValid(t *testing.T) {
 			"version":     "1.0.0",
 			"topic":       "foo",
 		},
+		"client_id configured": mapstr.M{
+			"client_id": "my-test-client-id",
+			"topic":     "foo",
+		},
 	}
 
 	for name, test := range tests {
@@ -57,6 +61,15 @@ func TestConfigAcceptValid(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Can not create test configuration: %v", err)
 			}
+
+			// Check client_id specifically for the "client_id configured" test case
+			if name == "client_id configured" {
+				expectedClientID := "my-test-client-id"
+				if cfg.ClientID != expectedClientID {
+					t.Errorf("Expected ClientID %q, but got %q", expectedClientID, cfg.ClientID)
+				}
+			}
+
 			if _, err := newSaramaConfig(logger, cfg); err != nil {
 				t.Fatalf("Failure creating sarama config: %v", err)
 			}
