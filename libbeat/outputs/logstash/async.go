@@ -276,11 +276,24 @@ func (r *msgRef) dec() {
 	}
 
 	err := r.err
-	if err == nil {
+	// If err is nil AND all events have been acknowledged (slice is empty), ACK the batch.
+	if r.err == nil && len(r.slice) == 0 {
 		r.batch.ACK()
 		return
 	}
 
-	r.batch.RetryEvents(r.slice)
-	r.client.log.Errorf("Failed to publish events caused by: %+v", err)
+	// Otherwise, retry the remaining events in the slice (if any) and log the error if present.
+	// The slice contains events that were not acknowledged.
+	if len(r.slice) > 0 {
+		r.client.observer.RetryableErrors(len(r.slice))
+		r.batch.RetryEvents(r.slice)
+	}
+
+	if r.err != nil {
+		r.client.log.Errorf("Failed to publish events caused by: %+v", r.err)
+	} else if len(r.slice) > 0 {
+		// This case should ideally not happen if err is nil, as all events should have been ACKed.
+		// But if it does, log it.
+		r.client.log.Errorf("Batch finished processing with no error, but %d events were not acknowledged", len(r.slice))
+	}
 }

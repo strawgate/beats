@@ -39,6 +39,55 @@ type testAsyncDriver struct {
 	wg      sync.WaitGroup
 }
 
+// mockBatch is a mock implementation of publisher.Batch for testing ACK calls.
+type mockBatch struct {
+	events []publisher.Event
+	acked  int
+	ackedMu sync.Mutex
+	done chan struct{} // Channel to signal when ACK is called
+}
+
+func newMockBatch(events []publisher.Event) *mockBatch {
+	return &mockBatch{
+		events: events,
+		done: make(chan struct{}),
+	}
+}
+
+func (b *mockBatch) Events() []publisher.Event {
+	return b.events
+}
+
+func (b *mockBatch) ACK() {
+	b.ackedMu.Lock()
+	defer b.ackedMu.Unlock()
+	b.acked++
+	// Signal that ACK was called
+	select {
+	case b.done <- struct{}{}:
+	default:
+	}
+}
+
+func (b *mockBatch) RetryEvents(events []publisher.Event) {
+	// For this test, we assume no retries
+}
+
+func (b *mockBatch) Cancelled() {
+	// For this test, we assume no cancellations
+}
+
+func (b *mockBatch) GetACKCount() int {
+	b.ackedMu.Lock()
+	defer b.ackedMu.Unlock()
+	return b.acked
+}
+
+func (b *mockBatch) WaitACK() {
+	<-b.done
+}
+
+
 func TestAsyncSendZero(t *testing.T) {
 	testSendZero(t, makeAsyncTestClient)
 }
