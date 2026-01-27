@@ -12,25 +12,42 @@ it can be visualized with Kibana.
 By "lightweight", we mean that Beats have a small installation footprint, use
 limited system resources, and have no runtime dependencies.
 
+## Requirements
+
+- Go 1.24.7+ for building from source
+- Compatible with Elasticsearch 8.0+ and current 9.2.x series
+- Supports Linux, macOS, and Windows platforms
+
 This repository contains
 [libbeat](https://github.com/elastic/beats/tree/main/libbeat), our Go
 framework for creating Beats, and all the officially supported Beats:
 
 Beat  | Description
 --- | ---
-[Auditbeat](https://github.com/elastic/beats/tree/main/auditbeat) | Collect your Linux audit framework data and monitor the integrity of your files.
-[Filebeat](https://github.com/elastic/beats/tree/main/filebeat) | Tails and ships log files
-[Heartbeat](https://github.com/elastic/beats/tree/main/heartbeat) | Ping remote services for availability
-[Metricbeat](https://github.com/elastic/beats/tree/main/metricbeat) | Fetches sets of metrics from the operating system and services
-[Packetbeat](https://github.com/elastic/beats/tree/main/packetbeat) | Monitors the network and applications by sniffing packets
-[Winlogbeat](https://github.com/elastic/beats/tree/main/winlogbeat) | Fetches and ships Windows Event logs
-[Osquerybeat](https://github.com/elastic/beats/tree/main/x-pack/osquerybeat) | Runs Osquery and manages interraction with it.
+[Auditbeat](https://github.com/elastic/beats/tree/main/auditbeat) | Collect your Linux audit framework data and monitor the integrity of your files with real-time file system monitoring.
+[Filebeat](https://github.com/elastic/beats/tree/main/filebeat) | Tails and ships log files from various sources with built-in modules for common applications and systems.
+[Heartbeat](https://github.com/elastic/beats/tree/main/heartbeat) | Ping remote services for availability and monitor uptime with detailed response metrics.
+[Metricbeat](https://github.com/elastic/beats/tree/main/metricbeat) | Fetches sets of metrics from the operating system and services with extensive module support for monitoring infrastructure.
+[Packetbeat](https://github.com/elastic/beats/tree/main/packetbeat) | Monitors the network and applications by sniffing packets and analyzing network traffic in real-time.
+[Winlogbeat](https://github.com/elastic/beats/tree/main/winlogbeat) | Fetches and ships Windows Event logs with support for custom event log channels and filtering.
+[Osquerybeat](https://github.com/elastic/beats/tree/main/x-pack/osquerybeat) | Runs Osquery and manages interaction with it for security monitoring and system introspection.
+
+## Latest Features (9.2.x Series)
+
+Recent enhancements in the current 9.2.x series include:
+
+- **Azure Authentication**: Client secret authentication method for Azure Event Hub and storage in Filebeat
+- **Transport Support**: AMQP-over-WebSocket transport support in processor v2
+- **Cloud Integration**: Enhanced AWS S3 input with status reporting support
+- **Kubernetes Metrics**: Updated container status metrics with `last_terminated_exitcode` field
+- **Security Hardening**: Improved parsing resilience against malformed data and panic prevention
+- **OpenTelemetry**: Updated dependencies for better observability integration
 
 In addition to the above Beats, which are officially supported by
 [Elastic](https://elastic.co), the community has created a set of other Beats
-that make use of libbeat but live outside of this Github repository. We maintain
+that make use of libbeat but live outside of this GitHub repository. We maintain
 a list of community Beats
-[here](https://www.elastic.co/guide/en/beats/libbeat/master/community-beats.html).
+[here](https://www.elastic.co/guide/en/beats/libbeat/current/community-beats.html).
 
 ## Documentation and Getting Started
 
@@ -45,10 +62,12 @@ on the [elastic.co site](https://www.elastic.co/guide/):
 * [Packetbeat](https://www.elastic.co/guide/en/beats/packetbeat/current/index.html)
 * [Winlogbeat](https://www.elastic.co/guide/en/beats/winlogbeat/current/index.html)
 
-## Documentation and Getting Started information for the Elastic Agent
+## Elastic Agent
+
+The Elastic Agent is a single, unified agent that you can deploy to hosts or containers to collect data and send it to the Elastic Stack. Behind the scenes, Elastic Agent runs the Beats shippers or Elastic Endpoint required for your configuration.
 
 You can find the documentation and getting started guides for the Elastic Agent
-on the [elastic.co site](https://www.elastic.co/downloads/elastic-agent)
+on the [elastic.co site](https://www.elastic.co/guide/en/fleet/current/elastic-agent-installation.html)
 
 ## Getting Help
 
@@ -76,7 +95,7 @@ your dev environment to build Beats from the source.
 
 ## Snapshots
 
-For testing purposes, we generate snapshot builds that you can find [here](https://artifacts-api.elastic.co/v1/search/8.0-SNAPSHOT/). Please be aware that these are built on top of main and are not meant for production.
+For testing purposes, we generate snapshot builds that you can find [here](https://artifacts-api.elastic.co/v1/search/9.0-SNAPSHOT/). Please be aware that these are built on top of main and are not meant for production.
 
 ## CI
 
@@ -87,7 +106,7 @@ It is possible to trigger some jobs by putting a comment on a GitHub PR.
 
 * [beats CI pipeline](https://buildkite.com/elastic/beats)
   * `/test` will kick off a default build.
-* [docs CI pipeline]([https://buildkite.com/elastic/beats](https://buildkite.com/elastic/docs-build-pr))
+* [docs CI pipeline](https://buildkite.com/elastic/docs-build-pr)
   * `run docs-build` will kick off a docs build.
 
 ### PR Labels
