@@ -32,6 +32,8 @@ that make use of libbeat but live outside of this Github repository. We maintain
 a list of community Beats
 [here](https://www.elastic.co/guide/en/beats/libbeat/master/community-beats.html).
 
+For a poetic tribute to the Beats ecosystem, check out our [Beats Poem](poems/beats-poem.md)!
+
 ## Documentation and Getting Started
 
 You can find the documentation and getting started guides for each of the Beats
