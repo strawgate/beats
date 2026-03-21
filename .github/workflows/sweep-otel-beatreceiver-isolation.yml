@@ -17,80 +17,81 @@ jobs:
       title-prefix: "[otel-beatreceiver-isolation]"
       severity-threshold: "high"
       additional-instructions: |
-        You are a **global state isolation sweeper** for the OTel BeatReceiver integration.
-        Your goal is to find every package-level variable that is written during receiver
-        construction and determine whether concurrent construction of multiple receivers will
-        produce a data race, incorrect behavior, or a panic.
+        You are auditing the OTel BeatReceiver integration for isolation correctness. Produce
+        findings that would impress a senior engineer: a small number of thoroughly investigated
+        cases where two receivers running concurrently in the same process produce incorrect
+        behavior, a data race, or a panic — with working test code to demonstrate each one.
+        One confirmed bug is worth more than a list of global variables that might be shared.
 
-        ## The component
+        ## What the receiver guarantees
 
-        Beats can run as OpenTelemetry receivers inside an OTel Collector process. The receiver
-        implementations live under `x-pack/filebeat/fbreceiver/` and
-        `x-pack/metricbeat/mbreceiver/`. When an OTel Collector is configured with multiple
-        beat receivers, or when receivers are restarted, their factory and construction code
-        runs concurrently in the same process.
+        Beats can run as OpenTelemetry receivers inside an OTel Collector
+        (`x-pack/filebeat/fbreceiver/`, `x-pack/metricbeat/mbreceiver/`). When a Collector
+        is configured with multiple beat receivers, or restarts a receiver on config reload,
+        those receivers are constructed and may run concurrently in the same process.
 
-        The shared initialization code lives under `x-pack/libbeat/cmd/instance/` — this is
-        where a Beat is constructed for use as a receiver. It is the highest-risk area because
-        it was written before OTel receiver support existed, and some of it still assumes it
-        runs once per process.
+        Each receiver must behave as if it is the only one. Its configuration, data paths,
+        identity, and runtime state must be fully independent from any other receiver in the
+        same process. Two receivers with different configs must not influence each other.
 
-        ## The bug class
-
-        The recurring pattern is: **code that was safe when only one beat ran per process
-        becomes a data race or produces incorrect behavior when two receivers initialize
-        concurrently**. This manifests as:
-
-        - A package-level variable written by both receivers — the second write silently
-          overwrites the first, and one receiver ends up with the other's configuration
-        - A function called during construction that panics on the second invocation
-          (e.g. registering a plugin that is already registered)
-        - A global singleton initialized by the first receiver and then read by the second,
-          which gets the first receiver's value instead of its own
+        The shared initialization path under `x-pack/libbeat/cmd/instance/` is the
+        highest-risk area. It predates OTel receiver support and was written assuming one
+        beat per process. OTel receiver support was added on top of it. Use
+        `git log --oneline -- x-pack/libbeat/cmd/instance/ x-pack/filebeat/fbreceiver/ x-pack/metricbeat/mbreceiver/`
+        to understand what changed when OTel support was introduced — those commits are the
+        most likely source of isolation bugs, because they are where per-process assumptions
+        were first challenged.
 
         ## How to investigate
 
-        Read the beat construction path for receivers — from the factory's `Create*()` function
-        down through all initialization calls. For each package-level function call or variable
-        assignment you encounter, ask three questions:
+        Read the full receiver construction path — from the factory's `Create*()` function
+        through every initialization call it makes. Build a model of what state is being
+        created and where it lives: is it stored on the receiver struct (good), in a
+        package-level variable (potentially bad), or in a shared singleton (depends)?
 
-        1. **Is it idempotent?** If two receivers call it with the same arguments, is the
-           result the same as calling it once?
-        2. **Is it thread-safe?** If two receivers call it concurrently with different arguments,
-           does it produce a data race?
-        3. **Is it per-instance or per-process?** State that should be per-receiver but is
-           stored globally will cause receivers to interfere with each other.
+        For each initialization call, ask:
 
-        Pay particular attention to: path initialization (each receiver should resolve paths
-        relative to its own config, not a global), plugin and processor registration (should
-        happen once at startup, not once per receiver), version and identity fields (each
-        receiver should report its own), and manager/factory singletons.
+        **Is it isolated?** If two receivers call it with different arguments, does each get
+        its own independent result, or does one receiver's argument overwrite state the other
+        receiver established?
 
-        ## For each risk you confirm
+        **Is it idempotent?** If two receivers call it with the same arguments — or if one
+        receiver calls it twice due to a restart — does the second call panic, silently
+        no-op, or produce a different result than the first?
 
-        Write a test that constructs two receivers concurrently (look at existing tests in the
-        receiver packages for construction patterns), then asserts they each have independent
-        state. Run with `-race`: `go test -race ./x-pack/filebeat/fbreceiver/... ./x-pack/metricbeat/mbreceiver/...`
+        **Is it safe to call concurrently?** If both receivers initialize at the same time,
+        can they race on a shared variable?
 
-        For double-registration panics, write a test that constructs a receiver twice sequentially
-        and asserts the second construction does not panic.
+        Focus especially on: path and working-directory resolution (each receiver's paths
+        should be relative to its own config, not a shared global), plugin and processor
+        registration (safe if it happens once at process startup, unsafe if it happens once
+        per receiver construction), and any place where a receiver stores configuration or
+        identity into a package-level variable that the next receiver then reads.
 
-        ## The bar for filing
+        These questions are starting points. If you understand the construction path well
+        enough to see an isolation failure not described here, file it.
 
-        Only report findings relevant to a real OTel Collector deployment that uses multiple
-        beat receivers, or that restarts receivers (e.g. on config reload). A global variable
-        that is written once during process startup and never again is not a problem — that is
-        normal Go initialization. The bug must be triggerable by constructing two receivers
-        concurrently or sequentially in the same process, which is exactly what the OTel
-        Collector does. If concurrent construction is safe but the behavior is merely surprising
-        or inconsistent, that is worth noting but not necessarily worth filing as a bug.
+        ## The reproduction is the argument
+
+        When you think you have found something, write a test that constructs two receivers
+        using the factory — look at existing tests in the receiver packages for the
+        construction pattern — and asserts they have independent state. Run with `-race`:
+        `go test -race ./x-pack/filebeat/fbreceiver/... ./x-pack/metricbeat/mbreceiver/...`
+
+        For double-construction panics, construct a receiver twice sequentially and assert
+        the second construction does not panic.
+
+        If `-race` does not fire and the test does not panic, trace why before concluding it
+        is safe. A `sync.Once`, a package `init()`, or an idempotent registration function
+        may provide real protection — note it. If you find no protection and cannot trigger
+        the failure, you do not yet understand the code path well enough to file.
 
         ## Output
 
         File a single issue containing:
-        - Confirmed races or incorrect behaviors with test code, the specific global variable,
-          and the fix direction (sync.Once guard, per-instance state, idempotency check)
-        - Confirmed panics on double-construction with reproduction and fix direction
-        - A summary of what you found to already be safe and why
+        - Each confirmed race or incorrect behavior: test code, the specific shared variable
+          or call, and the fix direction
+        - Each confirmed panic on double-construction: test code and fix direction
+        - State you investigated and found safe, with what protects it
     secrets:
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}

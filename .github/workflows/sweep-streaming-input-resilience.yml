@@ -17,94 +17,87 @@ jobs:
       title-prefix: "[streaming-input-resilience]"
       severity-threshold: "high"
       additional-instructions: |
-        You are a **error-path resilience sweeper** for Filebeat's streaming inputs. Your goal
-        is to find every place where a network error, unexpected server response, or bad timing
-        can cause a panic, silent data loss, CPU spin loop, or goroutine leak — and write a
-        failing test for each one you confirm.
+        You are auditing Filebeat's streaming inputs for resilience against real server and
+        network failures. Produce findings that would impress a senior engineer: a small
+        number of thoroughly investigated, reproducible failures where a real deployment
+        would lose data, spin at 100% CPU, or stop collecting events because a remote server
+        misbehaved in an ordinary way. One confirmed bug with a working test is worth more
+        than a list of error paths that look suspicious.
 
-        ## The component
+        ## What these inputs guarantee
 
-        The streaming inputs live under `x-pack/filebeat/input/`. The main ones to audit are:
-        - `streaming/` — WebSocket and CrowdStrike FalconHose inputs, plus the shared CEL-based
-          event processor
-        - `httpjson/` — HTTP polling input with cursor, chain, and pagination support
-        - `cel/` — CEL-based HTTP input
+        The streaming inputs (`x-pack/filebeat/input/streaming/`, `x-pack/filebeat/input/httpjson/`,
+        `x-pack/filebeat/input/cel/`) maintain long-lived or repeating connections to external
+        services. They make three guarantees: no event is lost due to a transient error (the
+        input reconnects and resumes from the last confirmed cursor), no server error response
+        is published as a real event, and no failure causes the input to spin or hang.
 
-        These inputs maintain long-lived connections to external services and must handle
-        connection drops, server errors, and credential expiry gracefully — reconnecting with
-        backoff, never panicking, never spinning, never losing the cursor position.
-
-        ## The bug class
-
-        Three categories of bugs recur in this area:
-
-        **State corruption on reconnect**: When a connection drops and the input reconnects,
-        it passes the current state back into the new session. If error paths return a
-        partially-mutated state (or nil where a map is expected), the next session panics or
-        behaves incorrectly. The correct pattern is: error paths must always return the state
-        unchanged from when the session started.
-
-        **Unexpected server responses published as events**: If the input feeds server error
-        responses (HTTP 4xx/5xx, non-JSON bodies, heartbeat messages) directly to the JSON
-        decoder and then publishes the result, corrupt or meaningless events reach the output.
-        Every response must be validated (status code, content type, message structure) before
-        it is decoded and published.
-
-        **Tight retry loops**: If a retry interval, token refresh interval, or backoff duration
-        is computed incorrectly (e.g. subtraction produces a negative duration, which Go treats
-        as zero), the input retries in a tight loop, consuming CPU and hammering the remote
-        endpoint. Every duration used in a `time.After`, `time.Sleep`, or ticker must be
-        validated to be positive before use.
-
-        A fourth category worth checking: **single transient failures that permanently terminate
-        the input**. Token fetch failures, single HTTP errors, and similar transient conditions
-        should trigger a retry with backoff, not a permanent stop. Any `return err` from inside
-        a retry loop that does not give the input a chance to recover is a bug.
+        The cursor is the heart of the delivery guarantee. It must advance only after an event
+        is confirmed by the pipeline, and it must be preserved intact across reconnects. An
+        input that advances the cursor before the ACK loses events on crash. An input that
+        returns a mutated or nil cursor from an error path will behave incorrectly on the next
+        connection — and the failure may be invisible until a user notices a gap in their data.
 
         ## How to investigate
 
-        Read each input's main run loop and follow the error paths. Ask: if the remote server
-        closes the connection right now, what happens? If the server returns a 500, what happens?
-        If the OAuth2 token endpoint returns a 503, what happens? If the response body is
-        `"Internal Server Error"` instead of a JSON object, what happens?
+        Pick one or two inputs and read the main run loop thoroughly. Understand the normal
+        flow first: connection established, event received, cursor advanced, loop continues.
+        Map what state is maintained across iterations. Then introduce failure at each point
+        and trace what happens.
 
-        For each input, also read the cursor advancement logic: is the cursor updated before or
-        after the event is successfully published? If the input crashes or is stopped after
-        publishing but before advancing the cursor, will it re-send the same events? If it
-        advances the cursor before confirming the event was accepted by the pipeline, will it
-        lose events on crash?
+        Specific failure modes worth pursuing:
 
-        Use the existing mock server infrastructure in `*_test.go` files as a model for writing
-        tests that simulate server errors. Most of these inputs have test helpers that set up
-        a local HTTP or WebSocket server — extend them to return error responses and verify
-        the input's behavior.
+        **Cursor state after a dropped connection.** If the connection closes mid-stream, what
+        is the exact cursor value returned from the failing function? Does the caller use it
+        as the starting point for the next connection? If the error path returns a partially
+        advanced cursor, the next connection starts from the wrong place.
 
-        ## For each risk you confirm
+        **Server error responses published as events.** If an HTTP endpoint returns a 4xx or
+        5xx response, or a WebSocket endpoint sends an error frame, does the input validate
+        the response before passing it to the event decoder? A 500 response with body
+        `"Internal Server Error"` fed to a JSON decoder produces a malformed event in the
+        output.
 
-        Write a test. Run it: `go test ./x-pack/filebeat/input/streaming/... ./x-pack/filebeat/input/httpjson/... ./x-pack/filebeat/input/cel/...`
+        **Tight retry loops from duration arithmetic.** If a retry interval or backoff duration
+        is computed from a server-provided value — a `Retry-After` header, a token expiry
+        time, a poll interval from the API response — what happens when that value is zero,
+        negative, or in the past? A `time.After(0)` or `time.NewTicker(0)` fires immediately
+        and continuously. Trace every duration computation to confirm it is validated to be
+        positive before use.
 
-        For goroutine leaks, assert that no goroutines are left running after the input stops.
-        For tight loops, assert the input makes no more than N retries in a given time window.
-        For state corruption panics, use `require.NotPanics`.
+        **Permanent failure from a single transient error.** Any `return err` from inside a
+        retry loop that does not give the input a chance to recover is a latent bug. Token
+        fetch failures, single HTTP errors, and similar transient conditions should trigger
+        a retry with backoff, not a permanent stop.
 
-        ## The bar for filing
+        Use `git log --oneline -p -- x-pack/filebeat/input/streaming/ x-pack/filebeat/input/httpjson/ x-pack/filebeat/input/cel/`
+        to find recently added error paths or recently changed retry logic. New input backends
+        and new authentication methods are added frequently — freshly written error paths are
+        where these bugs concentrate.
 
-        Only report findings that a real user with a real remote endpoint could encounter.
-        The failure condition must be something that can happen in a production environment:
-        a server that closes connections, returns HTTP errors, sends malformed JSON, or has
-        a slow OAuth2 endpoint. Do not file findings that require the test to inject failures
-        at a level of precision (e.g. corrupting a specific byte mid-read) that cannot occur
-        with a real remote service. If you cannot simulate the failure using a mock HTTP or
-        WebSocket server that behaves the way a real (if misbehaving) server would, the
-        finding is probably not worth filing.
+        These patterns are starting points. If you understand an input's run loop well enough
+        to see a failure mode not described here, file it.
+
+        ## The reproduction is the argument
+
+        When you think you have found something, write a test using the existing mock server
+        infrastructure in the input's `*_test.go` files. Configure the mock to return the
+        error response that triggers the failure and assert the input's behavior: cursor is
+        unchanged after the error, no events are published for the error response, no
+        goroutines leak after the input stops, and the input makes no more than N retries in
+        a bounded time window for tight-loop bugs.
+
+        `go test ./x-pack/filebeat/input/streaming/... ./x-pack/filebeat/input/httpjson/... ./x-pack/filebeat/input/cel/...`
+
+        If you cannot write a mock server that produces the failure, trace whether it can
+        arise with a real server behaving in a documented or commonly observed way. If not,
+        it may not be worth filing.
 
         ## Output
 
         File a single issue containing:
-        - Confirmed issues with test code, the exact failure scenario (what server behavior
-          triggers it), and the fix direction
-        - A priority ranking: which are most likely to affect users with unreliable connections
-          or occasionally-misbehaving endpoints
-        - A summary of inputs and error paths you checked and found safe
+        - Each confirmed bug: test code, the exact server behavior that triggers it, and the
+          fix direction
+        - Error paths you investigated and found safe, with what protects them
     secrets:
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}

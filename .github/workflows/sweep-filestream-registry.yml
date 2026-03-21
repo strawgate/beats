@@ -17,85 +17,76 @@ jobs:
       title-prefix: "[filestream-registry]"
       severity-threshold: "high"
       additional-instructions: |
-        You are a **re-ingestion and data-loss sweeper** for the Filestream input. Your goal is
-        to find every code path that can cause a file to be re-read from the beginning or events
-        to be silently dropped — and write a test or reproduction scenario for each one.
+        You are auditing Filestream's registry and state machine for correctness. Produce
+        findings that would impress a senior engineer: a small number of thoroughly
+        investigated, reproducible scenarios where real user data would be silently duplicated
+        or lost. One confirmed bug with a working test is worth more than ten suspicious
+        patterns described from reading alone.
 
-        ## The component
+        ## What the registry guarantees
 
-        The Filestream input lives under `filebeat/input/filestream/`. Its registry (which tracks
-        how far each file has been read) is implemented under
-        `filebeat/input/filestream/internal/input-logfile/`. The registry is the heart of
-        Filestream's correctness guarantee: if it loses a file's offset, that file will be
-        re-ingested from the beginning, producing duplicate data in the output.
-
-        ## The bug class
-
-        There are two failure modes that have produced bugs repeatedly in this component:
-
-        **Re-ingestion**: A file's offset is lost or reset to zero. This happens when a registry
-        entry is prematurely cleaned, when a file is matched to the wrong registry entry (identity
-        mismatch), when a cursor update is silently discarded, or when a migration path
-        (take_over, identifier type change) fails to preserve the offset.
-
-        **Silent data loss**: Events are published to the pipeline but the cursor is never
-        advanced. This happens when an ACK callback is discarded due to a version mismatch,
-        when a resource is cleaned while events are still in-flight, or when an error path
-        exits without calling the event's done/ACK callback.
+        The Filestream input (`filebeat/input/filestream/`) makes one core promise: every log
+        line is delivered exactly once. The registry
+        (`filebeat/input/filestream/internal/input-logfile/`) enforces this by persisting each
+        file's read offset to disk. If the registry loses an offset, the file re-reads from
+        the beginning — producing duplicates that a user may not notice for days. If a cursor
+        update is discarded after an event is published but before it is persisted, events
+        are re-sent on the next restart with no indication anything went wrong.
 
         ## How to investigate
 
-        Read the registry store, the harvester lifecycle, and the ACK/publish path end-to-end.
-        Understand how a file's state flows from "new file discovered" through "harvesting"
-        through "ACK received" to "registry updated on disk". Then ask: at each transition,
-        what can go wrong?
+        Read the full lifecycle of a single file: discovery → harvesting → publish → ACK →
+        cursor persisted to disk. Understand every state transition and every component that
+        touches a file's state. Form a clear model of the happy path first. Then look for
+        where real conditions break it.
 
-        Key areas to focus on:
+        Three areas worth pursuing deeply:
 
-        **Identity and matching**: How does the input decide which registry entry belongs to a
-        given file? There are two identity modes (inode-based and fingerprint-based). What
-        happens when files are rotated, renamed, or when the identity mode is changed in config?
-        Can a file end up matched to the wrong entry?
+        **Silent cursor discard.** Trace the path from "output ACKs an event" back to "registry
+        entry updated on disk." At each step — version checks, resource lifecycle checks,
+        concurrent cleanup — is there a condition where the ACK is processed but the cursor
+        is not advanced? If a resource is superseded between publish time and ACK time, does
+        the ACK get attributed to the right version, or is it silently dropped?
 
-        **Cursor update lifecycle**: When an event is ACKed, how does the cursor get written
-        to the persistent registry? Are there conditions (version mismatch, resource marked
-        deleted, concurrent cleanup) where a valid ACK silently discards the cursor update?
-        If so, the input will re-read from the last successfully persisted offset on next start.
+        **Wrong identity match.** Both inode-based and fingerprint-based identity modes have
+        edge cases under log rotation and config changes. What happens when a new file takes
+        the same inode as a recently rotated one? What happens when identity mode is changed
+        between restarts? Can a file ever end up matched to a stale entry — inheriting a
+        wrong offset — or lose its entry entirely and restart from zero?
 
-        **Cleanup timing**: The `clean_inactive` and `clean_removed` settings delete registry
-        entries after some time. What is the earliest moment an entry can be cleaned? Is it
-        possible for an entry to be cleaned while a harvester for that file is still running
-        or while events from that file are in-flight in the pipeline?
+        **Cleanup racing an active harvester.** The `clean_inactive` and `clean_removed`
+        settings delete registry entries after some time. What is the exact condition that
+        makes an entry eligible for deletion? Is there a window where an entry is deleted
+        while events from that file are still in-flight in the pipeline — so the ACK fires
+        after cleanup, writes to a stale or re-created entry, and the update is lost?
 
-        **Migration paths**: When filestream takes over from another input type, or when
-        `harvester_limit` causes files to be queued, are there windows where the state for a
-        file can be lost or reset?
+        Use `git log --oneline -p -- filebeat/input/filestream/` to understand recent changes.
+        Migration path code, identity mode additions, and cleanup timing changes are the most
+        regression-prone areas — a recently changed transition is always worth more scrutiny
+        than one that has been stable for years.
 
-        ## For each risk you confirm
+        These three areas are starting points, not a ceiling. If you understand the state
+        machine well enough to see a failure mode not described here, that is exactly the
+        kind of finding we want.
 
-        Write a unit test using the existing test infrastructure in the package (look at existing
-        `*_test.go` files for helper patterns). The test should set up the registry in the
-        relevant state, trigger the problematic transition, and assert that the cursor is
-        preserved. Run `go test ./filebeat/input/filestream/...` to confirm the failure.
+        ## The reproduction is the argument
 
-        ## The bar for filing
+        When you think you have found something, write a test before filing. Use the existing
+        test infrastructure in the package — look at `*_test.go` files for registry and
+        harvester helper patterns. Set up the state that precedes the bug, trigger the
+        transition, and assert the cursor is preserved correctly afterward.
+        `go test ./filebeat/input/filestream/...`
 
-        Only report findings that a real user could encounter with a realistic Filestream
-        configuration. The bug must be triggerable through normal user actions: starting and
-        stopping Filebeat, rotating log files, changing config, hitting harvester limits, or
-        running on a filesystem that performs renames. Do not file findings that require
-        manually corrupting the registry store or calling internal functions in an order that
-        the real code path never produces. If you cannot describe a concrete sequence of
-        user-observable events that leads to the bug, it is not worth filing.
+        If you cannot write a failing test, keep tracing. A scenario that seems problematic
+        from reading but cannot be demonstrated either has a protection you have not found,
+        or is not reachable from the real code path.
 
         ## Output
 
         File a single issue containing:
-        - Confirmed risks with test code or reproduction steps, the exact code path, and the
-          fix direction
-        - A description of any scenarios you investigated and found safe, so reviewers know
-          the coverage
-        - A priority ranking: which risks are most likely to affect users in production vs
-          only in edge-case configurations
+        - Each confirmed bug: test code or precise reproduction steps, the exact state
+          transition that fails, and the fix direction
+        - Scenarios you investigated thoroughly and found safe, with what protects them —
+          this establishes the coverage and makes the filed bugs more credible
     secrets:
       COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
