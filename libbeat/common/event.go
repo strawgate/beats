@@ -126,9 +126,9 @@ func (e *GenericEventConverter) normalizeMapStringSlice(maps []map[string]interf
 // normalizeSlice normalizes each element of the slice and returns a []interface{}.
 func (e *GenericEventConverter) normalizeSlice(v reflect.Value, keys ...string) (interface{}, []error) {
 	var errs []error
-	var sliceValues []interface{}
-
 	n := v.Len()
+	sliceValues := make([]interface{}, 0, n)
+
 	for i := 0; i < n; i++ {
 		sliceValue, err := e.normalizeValue(v.Index(i).Interface(), append(keys, strconv.Itoa(i))...)
 		if len(err) > 0 {
