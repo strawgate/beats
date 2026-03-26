@@ -39,7 +39,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/elastic/beats/v7/libbeat/api"
-	"github.com/elastic/beats/v7/libbeat/asset"
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/beats/v7/libbeat/cfgfile"
 	"github.com/elastic/beats/v7/libbeat/cloudid"
@@ -228,11 +227,6 @@ func NewBeat(name, indexPrefix, v string, elasticLicensed bool, initFuncs []func
 		return nil, err
 	}
 
-	fields, err := asset.GetFields(name)
-	if err != nil {
-		return nil, err
-	}
-
 	id, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
@@ -252,7 +246,7 @@ func NewBeat(name, indexPrefix, v string, elasticLicensed bool, initFuncs []func
 			EphemeralID:      metricreport.EphemeralID(), //nolint:staticcheck //keep behavior for now
 			FIPSDistribution: version.FIPSDistribution,
 		},
-		Fields:   fields,
+		Fields:   beat.NewLazyFields(name),
 		Registry: reload.NewRegistry(),
 		Paths:    paths.New(),
 	}
@@ -1061,7 +1055,11 @@ func (b *Beat) loadDashboards(ctx context.Context, force bool) error {
 		// but it's assumed that KB and ES have the same minor version.
 		v := client.GetVersion()
 
-		indexPattern, err := kibana.NewGenerator(b.Info.IndexPrefix, b.Info.Beat, b.Fields, b.Info.Version, v, b.Config.Migration.Enabled())
+		fields, err := b.Fields.Get()
+		if err != nil {
+			return fmt.Errorf("error loading fields: %w", err)
+		}
+		indexPattern, err := kibana.NewGenerator(b.Info.IndexPrefix, b.Info.Beat, fields, b.Info.Version, v, b.Config.Migration.Enabled())
 		if err != nil {
 			return fmt.Errorf("error creating index pattern generator: %w", err)
 		}
@@ -1403,6 +1401,9 @@ func (b *Beat) logSystemInfo(log *logp.Logger) {
 
 	// Go Runtime
 	log.Infow("Go runtime info", "go", sysinfo.Go())
+
+	// Memory breakdown (Go heap + OS-level private/shared)
+	logMemoryInfo(log)
 
 	// Host
 	if host, err := sysinfo.Host(); err == nil {

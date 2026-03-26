@@ -49,7 +49,11 @@ func GenIndexPatternConfigCmd(settings instance.Settings) *cobra.Command {
 			if err != nil {
 				fatalf("Error creating version: %+v.", err)
 			}
-			indexPattern, err := kibana.NewGenerator(b.Info.IndexPrefix, b.Info.Beat, b.Fields, settings.Version, *v, b.Config.Migration.Enabled())
+			fields, err := b.Fields.Get()
+			if err != nil {
+				fatalf("Error loading fields: %+v.", err)
+			}
+			indexPattern, err := kibana.NewGenerator(b.Info.IndexPrefix, b.Info.Beat, fields, settings.Version, *v, b.Config.Migration.Enabled())
 			if err != nil {
 				fatalf("Error creating Kibana Generator: %+v.", err)
 			}

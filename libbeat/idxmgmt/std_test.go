@@ -454,7 +454,7 @@ func TestIndexManager_Setup(t *testing.T) {
 
 			clientHandler, err := newMockClientHandler(test.ilmCfg, info)
 			require.NoError(t, err)
-			manager := im.Manager(clientHandler, BeatsAssets([]byte("testbeat fields")))
+			manager := im.Manager(clientHandler, BeatsAssets(beat.NewLazyFieldsFromData([]byte("testbeat fields"))))
 			err = manager.Setup(test.loadTemplate, test.loadILM)
 			clientHandler.assertInvariants(t)
 			if test.err {

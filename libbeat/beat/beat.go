@@ -78,7 +78,7 @@ type Beat struct {
 
 	BeatConfig *config.C // The beat's own configuration section
 
-	Fields []byte // Data from fields.yml
+	Fields *LazyFields // Data from fields.yml, loaded lazily on first access
 
 	Manager management.Manager // manager
 

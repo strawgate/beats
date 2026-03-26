@@ -17,16 +17,21 @@
 
 package idxmgmt
 
+import (
+	"github.com/elastic/beats/v7/libbeat/beat"
+)
+
 type assets struct {
-	fields []byte
+	lazyFields *beat.LazyFields
 }
 
-// BeatsAssets creates an asseter with a predefine set of fields that is always
-// reported.
-func BeatsAssets(fields []byte) Asseter {
-	return &assets{fields: fields}
+// BeatsAssets creates an asseter that lazily loads beat field definitions
+// on first access.
+func BeatsAssets(fields *beat.LazyFields) Asseter {
+	return &assets{lazyFields: fields}
 }
 
 func (a *assets) Fields(name string) []byte {
-	return a.fields // assume we have the beats global assets
+	data, _ := a.lazyFields.Get()
+	return data
 }

@@ -140,6 +140,13 @@ func setBeatFieldsCache(beat string, fields []byte) {
 	beatFieldsCache[beat] = fields
 }
 
+// CleanupRegistry removes the registry entries for the given beat name,
+// freeing the map structures. This should be called after GetFields has
+// cached the decompressed result for the beat.
+func CleanupRegistry(beat string) {
+	delete(FieldsRegistry, beat)
+}
+
 // DecodeData base64 decodes the data and uncompresses it
 func DecodeData(data string) ([]byte, error) {
 	decoded, err := base64.StdEncoding.DecodeString(data)
