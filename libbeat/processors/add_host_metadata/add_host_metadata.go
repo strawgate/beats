@@ -128,9 +128,9 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		return nil, fmt.Errorf("error loading data during event update: %w", err)
 	}
 
-	// Superficially this clone seems unnecessary, but it seems to have been
-	// applied as a fix a long time ago -- possibly there can be later processors
-	// or changes to an event that would affect the cached data?
+	// Clone the cached data before merging into the event. DeepUpdate places
+	// nested map references from the source into the target, so without cloning,
+	// a downstream processor mutating event.Fields could corrupt the cache.
 	event.Fields.DeepUpdate(data.Clone())
 
 	if len(p.geoData) > 0 {

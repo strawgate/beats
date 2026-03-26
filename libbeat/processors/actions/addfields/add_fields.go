@@ -32,10 +32,9 @@ type addFields struct {
 	shared    bool
 	overwrite bool
 
-	// metaFields contains only the @metadata value when fields has @metadata
-	// but no @timestamp. This allows splitting the update into a fast-path
-	// Fields.DeepUpdate + a targeted Meta update, avoiding the overhead of
-	// event.deepUpdate's delete/defer pattern.
+	// metaFields contains the @metadata value when fields has @metadata but
+	// no @timestamp. This allows updating event.Meta directly, avoiding the
+	// overhead of event.deepUpdate's delete/defer pattern for @metadata handling.
 	metaFields mapstr.M
 
 	// fieldsOnly contains the fields without @metadata/@timestamp keys.
