@@ -9,25 +9,25 @@
 #   echo 'normal event' >> /tmp/geo-bug-input.log
 #   echo 'another normal event' >> /tmp/geo-bug-input.log
 #
-# Run (revert our fix first to reproduce):
+# Run (revert the geoData.Clone() fix first to reproduce):
 #   ./filebeat -e -c geodata_corruption_conditional.yml 2>/dev/null \
 #     | jq '{message, geo_name: .host.geo.name}'
 #
 # Expected:
-#   {"message": "MUTATE_GEO",          "geo_name": "FIRST-EVENT-ONLY"}
-#   {"message": "normal event",        "geo_name": "datacenter-east"}
+#   {"message": "MUTATE_GEO",           "geo_name": "FIRST-EVENT-ONLY"}
+#   {"message": "normal event",         "geo_name": "datacenter-east"}
 #   {"message": "another normal event", "geo_name": "datacenter-east"}
 #
 # Actual (before fix):
-#   {"message": "MUTATE_GEO",          "geo_name": "FIRST-EVENT-ONLY"}
-#   {"message": "normal event",        "geo_name": "FIRST-EVENT-ONLY"}  <-- CORRUPTED
+#   {"message": "MUTATE_GEO",           "geo_name": "FIRST-EVENT-ONLY"}
+#   {"message": "normal event",         "geo_name": "FIRST-EVENT-ONLY"}  <-- CORRUPTED
 #   {"message": "another normal event", "geo_name": "FIRST-EVENT-ONLY"}  <-- CORRUPTED
 #
 # Root cause: add_host_metadata passes p.geoData to DeepUpdate without
 # cloning. DeepUpdate aliases the inner "geo" map reference into
-# event.Fields. The conditional add_fields below overwrites host.geo.name
-# on only the first event, but because the event's geo map IS the cached
-# map, the mutation permanently corrupts all future events.
+# event.Fields. The add_fields below uses target="" to merge at root,
+# overwriting the nested host.geo.name on only the first event. Because
+# the event's geo map IS the cached map, the write corrupts all future events.
 
 filebeat.inputs:
   - type: filestream
@@ -47,12 +47,12 @@ processors:
         region_iso_code: "US-NY"
         city_name: "New York"
 
-  # Only overwrite geo.name when the log line contains "MUTATE_GEO".
-  # This runs on only the first event, but corrupts ALL future events.
+  # target: "" merges at root, so host.geo.name is overwritten via DeepUpdate.
+  # This only runs when the message contains "MUTATE_GEO" (first event).
   - add_fields:
-      target: "host.geo"
+      target: ""
       fields:
-        name: "FIRST-EVENT-ONLY"
+        host.geo.name: "FIRST-EVENT-ONLY"
       when:
         contains:
           message: "MUTATE_GEO"

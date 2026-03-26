@@ -1,26 +1,25 @@
 # geodata_corruption_repro.yml
 #
-# Simpler reproduction: every event has geo.name overwritten. Without the
-# bug, this is just normal processor behavior. With the bug, it also
-# permanently corrupts the cached geoData — but since every event
-# overwrites anyway, the corruption is masked. See the conditional
-# variant (geodata_corruption_conditional.yml) for a more dramatic demo.
+# Simpler reproduction: every event has host.geo.name overwritten via
+# add_fields with target="" (merging at root). With the geoData cache
+# corruption bug, the overwrite permanently mutates the cached geoData
+# map, so even removing this processor would not restore the original
+# value within the same process lifetime.
 #
 # Setup:
 #   echo 'hello world' > /tmp/geo-bug-input.log
 #   echo 'second line' >> /tmp/geo-bug-input.log
 #   echo 'third line' >> /tmp/geo-bug-input.log
 #
-# Run (revert our fix first to reproduce):
+# Run:
 #   ./filebeat -e -c geodata_corruption_repro.yml 2>/dev/null \
 #     | jq '{message, geo_name: .host.geo.name}'
 #
-# All events will show geo_name="OVERWRITTEN" (both with and without
-# the bug fix, since add_fields runs unconditionally). The difference
-# is that WITHOUT the fix, the cached p.geoData map is permanently
-# modified — if you removed the add_fields processor and restarted,
-# the original "datacenter-east" value would still be gone within
-# the same process lifetime.
+# All events show geo_name="OVERWRITTEN" (both with and without the fix,
+# since add_fields runs unconditionally). The bug is that without the fix,
+# the CACHED p.geoData map is permanently mutated. See the conditional
+# variant (geodata_corruption_conditional.yml) for a demo where the
+# corruption is visible in the output.
 
 filebeat.inputs:
   - type: filestream
@@ -40,10 +39,11 @@ processors:
         region_iso_code: "US-NY"
         city_name: "New York"
 
+  # target: "" merges at root level, overwriting nested host.geo.name.
   - add_fields:
-      target: "host.geo"
+      target: ""
       fields:
-        name: "OVERWRITTEN"
+        host.geo.name: "OVERWRITTEN"
 
 output.console:
   pretty: false
