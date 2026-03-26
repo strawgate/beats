@@ -33,8 +33,6 @@ func (s hashSet) Contains(hash uint64) bool {
 
 // Reset resets the contents of the set to empty and returns itself.
 func (s hashSet) Reset() hashSet {
-	for k := range s {
-		delete(s, k)
-	}
+	clear(s)
 	return s
 }

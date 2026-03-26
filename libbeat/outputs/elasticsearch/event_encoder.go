@@ -20,6 +20,7 @@ package elasticsearch
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
@@ -129,9 +130,7 @@ func (pe *eventEncoder) encodeRawEvent(e *beat.Event) *encodedEvent {
 	if err != nil {
 		return &encodedEvent{err: fmt.Errorf("failed to encode event for output: %w", err)}
 	}
-	bufBytes := pe.buf.Bytes()
-	bytes := make([]byte, len(bufBytes))
-	copy(bytes, bufBytes)
+	bytes := slices.Clone(pe.buf.Bytes())
 	return &encodedEvent{
 		id:        id,
 		meta:      e.Meta,

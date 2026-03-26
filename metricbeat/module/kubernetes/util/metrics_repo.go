@@ -182,9 +182,7 @@ func (mr *MetricsRepo) DeleteNodeStore(nodeName string) {
 func (mr *MetricsRepo) DeleteAllNodeStore() {
 	mr.Lock()
 	defer mr.Unlock()
-	for nodeName := range mr.nodes {
-		delete(mr.nodes, nodeName)
-	}
+	clear(mr.nodes)
 }
 
 // NodeNames returns the names of all the Nodes.

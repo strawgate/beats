@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -256,9 +257,7 @@ func (c *client) getEventMessage(data *publisher.Event) (*message, error) {
 		return nil, err
 	}
 
-	buf := make([]byte, len(serializedEvent))
-	copy(buf, serializedEvent)
-	msg.value = buf
+	msg.value = slices.Clone(serializedEvent)
 
 	// message timestamps have been added to kafka with version 0.10.0.0
 	if c.config.Version.IsAtLeast(sarama.V0_10_0_0) {

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -327,9 +328,7 @@ func serializeEvents(
 			goto failLoop
 		}
 
-		buf := make([]byte, len(serializedEvent))
-		copy(buf, serializedEvent)
-		to = append(to, buf)
+		to = append(to, slices.Clone(serializedEvent))
 		i++
 	}
 	return succeeded, to
@@ -347,9 +346,7 @@ failLoop:
 			continue
 		}
 
-		buf := make([]byte, len(serializedEvent))
-		copy(buf, serializedEvent)
-		to = append(to, buf)
+		to = append(to, slices.Clone(serializedEvent))
 		i++
 	}
 

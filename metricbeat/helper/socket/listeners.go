@@ -86,9 +86,7 @@ func NewListenerTable() *ListenerTable {
 // Reset resets all data in the table.
 func (t *ListenerTable) Reset() {
 	for _, ports := range t.data {
-		for port := range ports {
-			delete(ports, port)
-		}
+		clear(ports)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -112,9 +113,7 @@ var (
 )
 
 func dupSlice(in []byte) []byte {
-	out := make([]byte, len(in))
-	copy(out, in)
-	return out
+	return slices.Clone(in)
 }
 
 func getEndpoints(pkt gopacket.Packet) (src net.UDPAddr, dst net.UDPAddr, err error) {

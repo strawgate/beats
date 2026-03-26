@@ -23,6 +23,7 @@ package diskqueue
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
@@ -114,11 +115,7 @@ func (e *eventEncoder) encode_publisher_event(event publisher.Event) ([]byte, er
 	}
 
 	// Copy the encoded bytes to a new array owned by the caller.
-	bytes := e.buf.Bytes()
-	result := make([]byte, len(bytes))
-	copy(result, bytes)
-
-	return result, nil
+	return slices.Clone(e.buf.Bytes()), nil
 }
 
 func newEventDecoder() *eventDecoder {
