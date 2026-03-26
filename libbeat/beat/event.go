@@ -142,27 +142,10 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		return
 	}
 
-	// Fast path: if the update map has no special keys (@timestamp, @metadata),
-	// we can skip the special key handling and update Fields directly.
-	// This is the common case for most processors.
-	_, hasTimestamp := d[TimestampFieldKey]
-	_, hasMeta := d[MetadataFieldKey]
-	if !hasTimestamp && !hasMeta {
-		if e.Fields == nil {
-			e.Fields = mapstr.M{}
-		}
-		switch mode {
-		case updateModeOverwrite:
-			e.Fields.DeepUpdate(d)
-		case updateModeNoOverwrite:
-			e.Fields.DeepUpdateNoOverwrite(d)
-		}
-		return
-	}
-
-	// Slow path: handle @timestamp and/or @metadata special keys.
-	if hasTimestamp {
-		timestampValue := d[TimestampFieldKey]
+	// It's supported to update the timestamp using this function.
+	// However, we must handle it separately since it's a separate field of the event.
+	timestampValue, timestampExists := d[TimestampFieldKey]
+	if timestampExists {
 		if mode == updateModeOverwrite {
 			_, _ = e.setTimestamp(timestampValue)
 		}
@@ -176,8 +159,10 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		}()
 	}
 
-	if hasMeta {
-		metaValue := d[MetadataFieldKey]
+	// It's supported to update the metadata using this function.
+	// However, we must handle it separately since it's a separate field of the event.
+	metaValue, metaExists := d[MetadataFieldKey]
+	if metaExists {
 		var metaUpdate mapstr.M
 
 		switch meta := metaValue.(type) {

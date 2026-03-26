@@ -559,6 +559,86 @@ func TestEvent(t *testing.T) {
 			require.Equal(t, expEvent.Meta, cloned.Meta)
 			require.Equal(t, expEvent.Fields, cloned.Fields)
 		})
+
+		t.Run("fast path - no special keys", func(t *testing.T) {
+			// This exercises the deepUpdate fast path where neither @timestamp
+			// nor @metadata exist in the update map.
+			event := &Event{
+				Timestamp: time.Now(),
+				Meta:      mapstr.M{"existing_meta": "preserved"},
+				Fields: mapstr.M{
+					"existing": "value",
+					"nested":   mapstr.M{"a": "1"},
+				},
+			}
+
+			update := mapstr.M{
+				"new_field": "added",
+				"nested":    mapstr.M{"b": "2"},
+			}
+
+			origTimestamp := event.Timestamp
+			event.DeepUpdate(update)
+
+			// Timestamp must not be changed
+			require.Equal(t, origTimestamp, event.Timestamp)
+			// Meta must not be changed
+			require.Equal(t, mapstr.M{"existing_meta": "preserved"}, event.Meta)
+			// Fields must be merged
+			require.Equal(t, "value", event.Fields["existing"])
+			require.Equal(t, "added", event.Fields["new_field"])
+			// Nested merge
+			nested := event.Fields["nested"].(mapstr.M)
+			require.Equal(t, "1", nested["a"])
+			require.Equal(t, "2", nested["b"])
+		})
+
+		t.Run("fast path - nil fields", func(t *testing.T) {
+			event := &Event{Fields: nil}
+			event.DeepUpdate(mapstr.M{"key": "value"})
+			require.Equal(t, mapstr.M{"key": "value"}, event.Fields)
+		})
+
+		t.Run("fast path no-overwrite - no special keys", func(t *testing.T) {
+			event := &Event{
+				Fields: mapstr.M{
+					"existing": "original",
+					"nested":   mapstr.M{"a": "1"},
+				},
+			}
+
+			update := mapstr.M{
+				"existing":  "should-not-overwrite",
+				"new_field": "added",
+				"nested":    mapstr.M{"a": "should-not-overwrite", "b": "2"},
+			}
+
+			event.DeepUpdateNoOverwrite(update)
+
+			require.Equal(t, "original", event.Fields["existing"])
+			require.Equal(t, "added", event.Fields["new_field"])
+			nested := event.Fields["nested"].(mapstr.M)
+			require.Equal(t, "1", nested["a"])
+			require.Equal(t, "2", nested["b"])
+		})
+
+		t.Run("update map not mutated", func(t *testing.T) {
+			// Verify the input map is restored after deepUpdate even when
+			// it contains @timestamp and @metadata
+			ts := time.Now()
+			update := mapstr.M{
+				TimestampFieldKey: ts,
+				MetadataFieldKey:  mapstr.M{"key": "value"},
+				"regular":         "field",
+			}
+			updateCopy := update.Clone()
+
+			event := &Event{Fields: mapstr.M{}}
+			event.DeepUpdate(update)
+
+			require.Equal(t, updateCopy, update,
+				"update map was mutated by DeepUpdate")
+		})
 	})
 
 	t.Run("String", func(t *testing.T) {
@@ -583,4 +663,71 @@ func TestEvent(t *testing.T) {
 
 		require.Equal(t, exp.String(), event.String())
 	})
+}
+
+// BenchmarkEventDeepUpdate_NoSpecialKeys benchmarks the fast path where
+// the update map contains no @timestamp or @metadata keys.
+func BenchmarkEventDeepUpdate_NoSpecialKeys(b *testing.B) {
+	fields := mapstr.M{
+		"elastic_agent": mapstr.M{
+			"id":       "agent-123",
+			"snapshot": false,
+			"version":  "8.12.0",
+		},
+	}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		event := &Event{
+			Timestamp: time.Now(),
+			Fields: mapstr.M{
+				"message": "test",
+				"host":    mapstr.M{"name": "testhost"},
+			},
+		}
+		event.DeepUpdate(fields)
+	}
+}
+
+// BenchmarkEventDeepUpdate_WithSpecialKeys benchmarks the slow path where
+// the update map contains @timestamp and @metadata keys.
+func BenchmarkEventDeepUpdate_WithSpecialKeys(b *testing.B) {
+	ts := time.Now()
+	fields := mapstr.M{
+		TimestampFieldKey: ts,
+		MetadataFieldKey:  mapstr.M{"input_id": "test"},
+		"elastic_agent": mapstr.M{
+			"id": "agent-123",
+		},
+	}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		event := &Event{
+			Timestamp: time.Now(),
+			Fields: mapstr.M{
+				"message": "test",
+				"host":    mapstr.M{"name": "testhost"},
+			},
+		}
+		event.DeepUpdate(fields)
+	}
+}
+
+// BenchmarkEventDeepUpdateNoOverwrite_NoSpecialKeys benchmarks the fast path
+// for DeepUpdateNoOverwrite.
+func BenchmarkEventDeepUpdateNoOverwrite_NoSpecialKeys(b *testing.B) {
+	fields := mapstr.M{
+		"agent": mapstr.M{"id": "agent-123"},
+	}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		event := &Event{
+			Fields: mapstr.M{
+				"agent": mapstr.M{"id": "existing", "type": "filebeat"},
+			},
+		}
+		event.DeepUpdateNoOverwrite(fields)
+	}
 }
