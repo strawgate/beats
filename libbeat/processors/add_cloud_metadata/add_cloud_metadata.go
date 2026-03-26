@@ -115,18 +115,15 @@ func (p *addCloudMetadata) init() {
 	})
 }
 
-func (p *addCloudMetadata) getMeta() mapstr.M {
-	p.init()
-	return p.metadata.Clone()
-}
-
 func (p *addCloudMetadata) Run(event *beat.Event) (*beat.Event, error) {
-	meta := p.getMeta()
-	if len(meta) == 0 {
+	// Ensure metadata has been fetched. After init() returns, p.metadata is
+	// immutable — it is set exactly once and never written again.
+	p.init()
+	if len(p.metadata) == 0 {
 		return event, nil
 	}
 
-	err := p.addMeta(event, meta)
+	err := p.addMeta(event)
 	if err != nil {
 		return nil, err
 	}
@@ -137,8 +134,10 @@ func (p *addCloudMetadata) String() string {
 	metadataStr := "<uninitialized>"
 	select {
 	case <-p.initDone:
-		// init() completed
-		metadataStr = p.getMeta().String()
+		// init() completed; p.metadata is read-only after init, safe to read directly.
+		// Use Clone() to normalise a nil map (no provider detected) to an empty map
+		// so that String() always returns "{}" rather than "null".
+		metadataStr = p.metadata.Clone().String()
 	default:
 	}
 	return "add_cloud_metadata=" + metadataStr
@@ -150,8 +149,27 @@ func (p *addCloudMetadata) Close() error {
 	return nil
 }
 
-func (p *addCloudMetadata) addMeta(event *beat.Event, meta mapstr.M) error {
-	for key, metaVal := range meta {
+// cloneValue returns an independent copy of v suitable for storing in an event.
+// Nested maps are deep-cloned so that subsequent mutation of the event field
+// cannot affect the shared metadata stored in p.metadata.
+// Non-map values (strings, numbers, etc.) are immutable and returned as-is.
+func cloneValue(v interface{}) interface{} {
+	switch v := v.(type) {
+	case mapstr.M:
+		return v.Clone()
+	case map[string]interface{}:
+		return mapstr.M(v).Clone()
+	default:
+		return v
+	}
+}
+
+func (p *addCloudMetadata) addMeta(event *beat.Event) error {
+	// Iterate the shared metadata map directly — no outer-map clone needed since we
+	// only read the top-level keys. Each value is cloned individually before being
+	// stored in the event so that subsequent mutations to the event's fields cannot
+	// corrupt the shared p.metadata.
+	for key, metaVal := range p.metadata {
 		// If key exists in event already and overwrite flag is set to false, this processor will not overwrite the
 		// meta fields. For example aws module writes cloud.instance.* to events already, with overwrite=false,
 		// add_cloud_metadata should not overwrite these fields with new values.
@@ -161,7 +179,7 @@ func (p *addCloudMetadata) addMeta(event *beat.Event, meta mapstr.M) error {
 				continue
 			}
 		}
-		_, err := event.PutValue(key, metaVal)
+		_, err := event.PutValue(key, cloneValue(metaVal))
 		if err != nil {
 			return err
 		}
