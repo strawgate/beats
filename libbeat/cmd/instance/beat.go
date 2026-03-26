@@ -1402,9 +1402,6 @@ func (b *Beat) logSystemInfo(log *logp.Logger) {
 	// Go Runtime
 	log.Infow("Go runtime info", "go", sysinfo.Go())
 
-	// Memory breakdown (Go heap + OS-level private/shared)
-	logMemoryInfo(log)
-
 	// Host
 	if host, err := sysinfo.Host(); err == nil {
 		hostInfo := host.Info()
@@ -1581,3 +1578,4 @@ func (bc *beatConfig) Validate() error {
 
 	return nil
 }
+
