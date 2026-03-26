@@ -759,3 +759,51 @@ func newWithHostInfoFactory(cfg *conf.C, log *logp.Logger, factory hostInfoFacto
 
 	return p, nil
 }
+
+// TestGeoDataNotCorruptedBetweenEvents verifies that p.geoData is not mutated
+// when a downstream processor modifies geo fields on the event. This is a
+// regression test for a pre-existing bug: event.Fields.DeepUpdate(p.geoData)
+// places a direct reference to p.geoData's inner maps into the event, so
+// mutating the event's geo fields corrupts the cached geoData for all
+// subsequent events.
+func TestGeoDataNotCorruptedBetweenEvents(t *testing.T) {
+	config := map[string]interface{}{
+		"geo.name":             "yerevan-am",
+		"geo.location":         "40.177200, 44.503490",
+		"geo.continent_name":   "Asia",
+		"geo.country_name":     "Armenia",
+		"geo.country_iso_code": "AM",
+		"geo.region_name":      "Erevan",
+		"geo.region_iso_code":  "AM-ER",
+		"geo.city_name":        "Yerevan",
+	}
+	testConfig, err := conf.NewConfigFrom(config)
+	require.NoError(t, err)
+
+	p, err := New(testConfig, logptest.NewTestingLogger(t, ""))
+	require.NoError(t, err)
+
+	// Process first event
+	event1 := &beat.Event{Fields: mapstr.M{}, Timestamp: time.Now()}
+	event1, err = p.Run(event1)
+	require.NoError(t, err)
+
+	// Verify geo fields are present
+	geoName1, err := event1.GetValue("host.geo.name")
+	require.NoError(t, err)
+	assert.Equal(t, "yerevan-am", geoName1)
+
+	// Simulate a downstream processor mutating the event's geo field
+	_, err = event1.PutValue("host.geo.name", "corrupted-by-downstream")
+	require.NoError(t, err)
+
+	// Process second event
+	event2 := &beat.Event{Fields: mapstr.M{}, Timestamp: time.Now()}
+	event2, err = p.Run(event2)
+	require.NoError(t, err)
+
+	// The second event should still have the original geo.name, not the corrupted value
+	geoName2, err := event2.GetValue("host.geo.name")
+	require.NoError(t, err)
+	assert.Equal(t, "yerevan-am", geoName2, "geoData was corrupted by a previous event's downstream modification")
+}

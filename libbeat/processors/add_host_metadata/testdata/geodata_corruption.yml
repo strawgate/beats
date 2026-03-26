@@ -1,0 +1,50 @@
+# Filebeat config demonstrating geoData cache corruption in add_host_metadata.
+#
+# Bug: add_host_metadata passes p.geoData to DeepUpdate without cloning.
+# DeepUpdate aliases nested map references into the event. When a downstream
+# processor modifies the event's host.geo map (e.g. rename, drop_fields,
+# add_fields), it mutates the cached geoData, corrupting all future events.
+#
+# To reproduce with filebeat:
+#   1. Save this as filebeat.yml
+#   2. touch /tmp/test-geo-bug.log
+#   3. Run: ./filebeat -e -c filebeat.yml
+#   4. In another terminal:
+#        echo '{"msg":"event1"}' >> /tmp/test-geo-bug.log
+#        sleep 1
+#        echo '{"msg":"event2"}' >> /tmp/test-geo-bug.log
+#        sleep 1
+#        echo '{"msg":"event3"}' >> /tmp/test-geo-bug.log
+#
+# Expected: All 3 events should have host.geo.name = "datacenter-east"
+# Actual: event1 has host.geo.name = "datacenter-east"
+#         event2 and event3 are missing host.geo.name entirely
+#         because the drop_fields processor on event1 deleted "name"
+#         from the shared cached geoData map.
+
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /tmp/test-geo-bug.log
+
+processors:
+  - add_host_metadata:
+      geo:
+        name: "datacenter-east"
+        location: "40.7128, -74.0060"
+        continent_name: "North America"
+        country_name: "United States"
+        country_iso_code: "US"
+        region_name: "New York"
+        region_iso_code: "US-NY"
+        city_name: "New York"
+
+  # This drop_fields deletes host.geo.name from the event. Because
+  # event.Fields["host"]["geo"] is an aliased reference to the cached
+  # geoData map, this permanently removes "name" from the cache.
+  - drop_fields:
+      fields: ["host.geo.name"]
+
+output.console:
+  pretty: true

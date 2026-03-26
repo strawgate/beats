@@ -134,7 +134,7 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 	event.Fields.DeepUpdate(data.Clone())
 
 	if len(p.geoData) > 0 {
-		event.Fields.DeepUpdate(p.geoData)
+		event.Fields.DeepUpdate(p.geoData.Clone())
 	}
 	return event, nil
 }
