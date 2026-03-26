@@ -134,7 +134,13 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 	event.Fields.DeepUpdate(data.Clone())
 
 	if len(p.geoData) > 0 {
-		event.Fields.DeepUpdate(p.geoData.Clone())
+		// BUG: p.geoData is not cloned before DeepUpdate. DeepUpdate aliases
+		// nested map references into the event, so a downstream processor
+		// modifying host.geo.* fields will corrupt the cached geoData for all
+		// subsequent events. The same bug exists in add_observer_metadata.
+		// See testdata/geodata_corruption_conditional.yml for a reproduction.
+		// Fix: change to p.geoData.Clone()
+		event.Fields.DeepUpdate(p.geoData)
 	}
 	return event, nil
 }

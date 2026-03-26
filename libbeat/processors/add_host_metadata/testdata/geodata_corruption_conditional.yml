@@ -9,7 +9,7 @@
 #   echo 'normal event' >> /tmp/geo-bug-input.log
 #   echo 'another normal event' >> /tmp/geo-bug-input.log
 #
-# Run (revert the geoData.Clone() fix first to reproduce):
+# Run:
 #   ./filebeat -e -c geodata_corruption_conditional.yml 2>/dev/null \
 #     | jq '{message, geo_name: .host.geo.name}'
 #
