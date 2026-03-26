@@ -31,6 +31,21 @@ type addFields struct {
 	fields    mapstr.M
 	shared    bool
 	overwrite bool
+
+	// hasSpecialKeys is true if fields contain @timestamp or @metadata keys
+	// at the top level. When false, we can bypass event.deepUpdate's special
+	// key handling and call event.Fields.DeepUpdate directly.
+	hasSpecialKeys bool
+
+	// metaFields contains only the @metadata value when fields has @metadata
+	// but no @timestamp. This allows splitting the update into a fast-path
+	// Fields.DeepUpdate + a targeted Meta update, avoiding the overhead of
+	// event.deepUpdate's delete/defer pattern.
+	metaFields mapstr.M
+
+	// fieldsOnly contains the fields without @metadata/@timestamp keys.
+	// Used together with metaFields to avoid the generic deepUpdate path.
+	fieldsOnly mapstr.M
 }
 
 // FieldsKey is the default target key for the add_fields processor.
@@ -58,7 +73,32 @@ func CreateAddFields(c *conf.C, _ *logp.Logger) (beat.Processor, error) {
 // Set `shared` true if there is the chance of labels being changed/modified by
 // subsequent processors.
 func NewAddFields(fields mapstr.M, shared bool, overwrite bool) beat.Processor {
-	return &addFields{fields: fields, shared: shared, overwrite: overwrite}
+	_, hasTimestamp := fields[beat.TimestampFieldKey]
+	metaValue, hasMeta := fields[beat.MetadataFieldKey]
+
+	af := &addFields{
+		fields:         fields,
+		shared:         shared,
+		overwrite:      overwrite,
+		hasSpecialKeys: hasTimestamp || hasMeta,
+	}
+
+	// Pre-split fields with @metadata but no @timestamp for the optimized path.
+	if hasMeta && !hasTimestamp {
+		if metaMap, ok := metaValue.(mapstr.M); ok {
+			af.metaFields = metaMap
+			if len(fields) > 1 {
+				af.fieldsOnly = make(mapstr.M, len(fields)-1)
+				for k, v := range fields {
+					if k != beat.MetadataFieldKey {
+						af.fieldsOnly[k] = v
+					}
+				}
+			}
+		}
+	}
+
+	return af
 }
 
 func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
@@ -66,17 +106,69 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 		return event, nil
 	}
 
+	// Fast path: fields contain only regular keys (no @timestamp or @metadata).
+	// This is the common case for elastic agent processors (agent info, data_stream, etc.).
+	// We bypass event.deepUpdate's special key checking and call Fields.DeepUpdate directly.
+	if !af.hasSpecialKeys {
+		fields := af.fields
+		if af.shared {
+			fields = fields.Clone()
+		}
+		if event.Fields == nil {
+			event.Fields = mapstr.M{}
+		}
+		if af.overwrite {
+			event.Fields.DeepUpdate(fields)
+		} else {
+			event.Fields.DeepUpdateNoOverwrite(fields)
+		}
+		return event, nil
+	}
+
+	// Optimized @metadata path: when fields contain @metadata but no @timestamp,
+	// we split the update to avoid event.deepUpdate's delete/defer overhead.
+	if af.metaFields != nil {
+		metaFields := af.metaFields
+		if af.shared {
+			metaFields = metaFields.Clone()
+		}
+		if event.Meta == nil {
+			event.Meta = mapstr.M{}
+		}
+		if af.overwrite {
+			event.Meta.DeepUpdate(metaFields)
+		} else {
+			event.Meta.DeepUpdateNoOverwrite(metaFields)
+		}
+		// Update remaining non-metadata fields if any
+		if len(af.fieldsOnly) > 0 {
+			fieldsOnly := af.fieldsOnly
+			if af.shared {
+				fieldsOnly = fieldsOnly.Clone()
+			}
+			if event.Fields == nil {
+				event.Fields = mapstr.M{}
+			}
+			if af.overwrite {
+				event.Fields.DeepUpdate(fieldsOnly)
+			} else {
+				event.Fields.DeepUpdateNoOverwrite(fieldsOnly)
+			}
+		}
+		return event, nil
+	}
+
+	// Slow path: fields contain @timestamp or both @timestamp and @metadata.
+	// Fall back to the generic event.deepUpdate which handles all special keys.
 	fields := af.fields
 	if af.shared {
 		fields = fields.Clone()
 	}
-
 	if af.overwrite {
 		event.DeepUpdate(fields)
 	} else {
 		event.DeepUpdateNoOverwrite(fields)
 	}
-
 	return event, nil
 }
 
