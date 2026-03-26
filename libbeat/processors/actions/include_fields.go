@@ -68,7 +68,7 @@ func newIncludeFields(c *conf.C, log *logp.Logger) (beat.Processor, error) {
 }
 
 func (f *includeFields) Run(event *beat.Event) (*beat.Event, error) {
-	filtered := mapstr.M{}
+	filtered := make(mapstr.M, len(f.Fields))
 	var errs []string
 
 	for _, field := range f.Fields {

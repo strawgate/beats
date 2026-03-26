@@ -157,7 +157,8 @@ func (f *appendProcessor) String() string {
 }
 
 // this function will remove all the empty strings and nil values from the array
-func cleanEmptyValues(dirtyArr []interface{}) (cleanArr []interface{}) {
+func cleanEmptyValues(dirtyArr []interface{}) []interface{} {
+	cleanArr := make([]interface{}, 0, len(dirtyArr))
 	for _, val := range dirtyArr {
 		if val == "" || val == nil {
 			continue
@@ -168,8 +169,9 @@ func cleanEmptyValues(dirtyArr []interface{}) (cleanArr []interface{}) {
 }
 
 // this function will remove all the duplicate values from the array
-func removeDuplicates(dirtyArr []interface{}) (cleanArr []interface{}) {
-	set := make(map[interface{}]bool, 0)
+func removeDuplicates(dirtyArr []interface{}) []interface{} {
+	set := make(map[interface{}]bool, len(dirtyArr))
+	cleanArr := make([]interface{}, 0, len(dirtyArr))
 	for _, val := range dirtyArr {
 		if _, ok := set[val]; !ok {
 			set[val] = true
