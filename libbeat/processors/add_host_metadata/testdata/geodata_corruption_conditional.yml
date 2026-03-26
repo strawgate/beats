@@ -1,0 +1,60 @@
+# geodata_corruption_conditional.yml
+#
+# A more dramatic demonstration: only the FIRST event's geo is modified,
+# but ALL subsequent events are corrupted because they share the same
+# cached map reference.
+#
+# Setup:
+#   echo '{"msg":"first","mutate":"yes"}' > /tmp/geo-bug-input.log
+#   echo '{"msg":"second"}' >> /tmp/geo-bug-input.log
+#   echo '{"msg":"third"}' >> /tmp/geo-bug-input.log
+#
+# Run:
+#   ./filebeat -e -c geodata_corruption_conditional.yml 2>/dev/null \
+#     | jq '{msg: .msg, geo_name: .host.geo.name}'
+#
+# Expected:
+#   {"msg": "first",  "geo_name": "FIRST-EVENT-ONLY"}   <-- modified by script
+#   {"msg": "second", "geo_name": "datacenter-east"}     <-- original from config
+#   {"msg": "third",  "geo_name": "datacenter-east"}     <-- original from config
+#
+# Actual:
+#   {"msg": "first",  "geo_name": "FIRST-EVENT-ONLY"}   <-- modified by script
+#   {"msg": "second", "geo_name": "FIRST-EVENT-ONLY"}   <-- CORRUPTED
+#   {"msg": "third",  "geo_name": "FIRST-EVENT-ONLY"}   <-- CORRUPTED
+#
+# The script processor only runs when mutate=yes (first event only), but
+# it modifies the shared cached geoData map through the aliased reference,
+# permanently corrupting it for all future events.
+
+filebeat.inputs:
+  - type: filestream
+    id: geo-bug-test
+    paths:
+      - /tmp/geo-bug-input.log
+
+processors:
+  - add_host_metadata:
+      geo:
+        name: "datacenter-east"
+        location: "40.7128, -74.0060"
+        continent_name: "North America"
+        country_name: "United States"
+        country_iso_code: "US"
+        region_name: "New York"
+        region_iso_code: "US-NY"
+        city_name: "New York"
+
+  - add_fields:
+      target: "host.geo"
+      fields:
+        name: "FIRST-EVENT-ONLY"
+      when:
+        has_fields: ["mutate"]
+
+  - drop_fields:
+      fields: ["mutate"]
+      ignore_missing: true
+
+output.console:
+  pretty: false
