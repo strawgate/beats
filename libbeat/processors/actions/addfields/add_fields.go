@@ -32,11 +32,6 @@ type addFields struct {
 	shared    bool
 	overwrite bool
 
-	// hasSpecialKeys is true if fields contain @timestamp or @metadata keys
-	// at the top level. When false, we can bypass event.deepUpdate's special
-	// key handling and call event.Fields.DeepUpdate directly.
-	hasSpecialKeys bool
-
 	// metaFields contains only the @metadata value when fields has @metadata
 	// but no @timestamp. This allows splitting the update into a fast-path
 	// Fields.DeepUpdate + a targeted Meta update, avoiding the overhead of
@@ -85,10 +80,9 @@ func NewAddFields(fields mapstr.M, shared bool, overwrite bool) beat.Processor {
 	metaValue, hasMeta := fields[beat.MetadataFieldKey]
 
 	af := &addFields{
-		fields:         fields,
-		shared:         shared,
-		overwrite:      overwrite,
-		hasSpecialKeys: hasTimestamp || hasMeta,
+		fields:    fields,
+		shared:    shared,
+		overwrite: overwrite,
 	}
 
 	// Pre-split fields with @metadata but no @timestamp for the optimized path.
@@ -109,7 +103,7 @@ func NewAddFields(fields mapstr.M, shared bool, overwrite bool) beat.Processor {
 	// Detect single-key wrapper shape: {"target": mapstr.M{...}}.
 	// This is the dominant pattern from MakeFieldsProcessor and elastic agent.
 	// When shared=true, we only need to clone the inner map, not the outer wrapper.
-	if shared && !af.hasSpecialKeys && len(fields) == 1 {
+	if shared && !hasTimestamp && !hasMeta && len(fields) == 1 {
 		for k, v := range fields {
 			if inner, ok := v.(mapstr.M); ok {
 				af.singleKey = k
@@ -126,44 +120,32 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 		return event, nil
 	}
 
-	// Fast path: fields contain only regular keys (no @timestamp or @metadata).
-	// This is the common case for elastic agent processors (agent info, data_stream, etc.).
-	// We bypass event.deepUpdate's special key checking and call Fields.DeepUpdate directly.
-	if !af.hasSpecialKeys {
+	// Single-key wrapper fast path: when fields have exactly one top-level key
+	// wrapping a nested mapstr.M (e.g. {"elastic_agent": {"id": "...", ...}}),
+	// clone only the inner map and build a temporary wrapper. This avoids
+	// cloning the outer map and bypasses event.deepUpdate's special key checks.
+	// This is the dominant shape from MakeFieldsProcessor and elastic agent.
+	if af.singleKeyInner != nil {
+		inner := af.singleKeyInner
+		if af.shared {
+			inner = inner.Clone()
+		}
 		if event.Fields == nil {
 			event.Fields = mapstr.M{}
 		}
-		if af.singleKeyInner != nil {
-			// Single-key wrapper optimization: clone only the inner map and
-			// build a temporary outer wrapper. This saves one map allocation
-			// per event vs cloning the full 2-level map tree, because the
-			// wrapper is a 1-entry map that Go can stack-allocate.
-			inner := af.singleKeyInner
-			if af.shared {
-				inner = inner.Clone()
-			}
-			wrapper := mapstr.M{af.singleKey: inner}
-			if af.overwrite {
-				event.Fields.DeepUpdate(wrapper)
-			} else {
-				event.Fields.DeepUpdateNoOverwrite(wrapper)
-			}
+		wrapper := mapstr.M{af.singleKey: inner}
+		if af.overwrite {
+			event.Fields.DeepUpdate(wrapper)
 		} else {
-			fields := af.fields
-			if af.shared {
-				fields = fields.Clone()
-			}
-			if af.overwrite {
-				event.Fields.DeepUpdate(fields)
-			} else {
-				event.Fields.DeepUpdateNoOverwrite(fields)
-			}
+			event.Fields.DeepUpdateNoOverwrite(wrapper)
 		}
 		return event, nil
 	}
 
-	// Optimized @metadata path: when fields contain @metadata but no @timestamp,
-	// we split the update to avoid event.deepUpdate's delete/defer overhead.
+	// Metadata split path: when fields contain @metadata but no @timestamp,
+	// update event.Meta and event.Fields separately. This avoids cloning the
+	// outer {"@metadata": inner} wrapper and bypasses event.deepUpdate's
+	// delete/defer pattern for @metadata handling.
 	if af.metaFields != nil {
 		metaFields := af.metaFields
 		if af.shared {
@@ -177,7 +159,6 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 		} else {
 			event.Meta.DeepUpdateNoOverwrite(metaFields)
 		}
-		// Update remaining non-metadata fields if any
 		if len(af.fieldsOnly) > 0 {
 			fieldsOnly := af.fieldsOnly
 			if af.shared {
@@ -195,8 +176,8 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 		return event, nil
 	}
 
-	// Slow path: fields contain @timestamp or both @timestamp and @metadata.
-	// Fall back to the generic event.deepUpdate which handles all special keys.
+	// General path: clone if shared, then use event.DeepUpdate which handles
+	// @timestamp, @metadata, and regular fields.
 	fields := af.fields
 	if af.shared {
 		fields = fields.Clone()
