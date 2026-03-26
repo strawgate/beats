@@ -117,7 +117,7 @@ func (p *addCloudMetadata) init() {
 
 func (p *addCloudMetadata) getMeta() mapstr.M {
 	p.init()
-	return p.metadata
+	return p.metadata.Clone()
 }
 
 func (p *addCloudMetadata) Run(event *beat.Event) (*beat.Event, error) {
@@ -160,11 +160,6 @@ func (p *addCloudMetadata) addMeta(event *beat.Event, meta mapstr.M) error {
 			if v != nil {
 				continue
 			}
-		}
-		// Clone nested maps before placing into the event to prevent downstream
-		// processors from corrupting the cached metadata.
-		if m, ok := metaVal.(mapstr.M); ok {
-			metaVal = m.Clone()
 		}
 		_, err := event.PutValue(key, metaVal)
 		if err != nil {
