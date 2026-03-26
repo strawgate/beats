@@ -46,6 +46,14 @@ type addFields struct {
 	// fieldsOnly contains the fields without @metadata/@timestamp keys.
 	// Used together with metaFields to avoid the generic deepUpdate path.
 	fieldsOnly mapstr.M
+
+	// singleKey is set when the fields map has exactly one top-level key
+	// wrapping an inner mapstr.M (e.g. {"elastic_agent": {"id": "...", ...}}).
+	// This is the dominant shape created by MakeFieldsProcessor/generateAddFieldsProcessor.
+	// When set, Run() clones only the inner map and builds a temporary wrapper,
+	// saving one map allocation per event vs cloning the entire tree.
+	singleKey      string
+	singleKeyInner mapstr.M
 }
 
 // FieldsKey is the default target key for the add_fields processor.
@@ -98,6 +106,18 @@ func NewAddFields(fields mapstr.M, shared bool, overwrite bool) beat.Processor {
 		}
 	}
 
+	// Detect single-key wrapper shape: {"target": mapstr.M{...}}.
+	// This is the dominant pattern from MakeFieldsProcessor and elastic agent.
+	// When shared=true, we only need to clone the inner map, not the outer wrapper.
+	if shared && !af.hasSpecialKeys && len(fields) == 1 {
+		for k, v := range fields {
+			if inner, ok := v.(mapstr.M); ok {
+				af.singleKey = k
+				af.singleKeyInner = inner
+			}
+		}
+	}
+
 	return af
 }
 
@@ -110,17 +130,34 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	// This is the common case for elastic agent processors (agent info, data_stream, etc.).
 	// We bypass event.deepUpdate's special key checking and call Fields.DeepUpdate directly.
 	if !af.hasSpecialKeys {
-		fields := af.fields
-		if af.shared {
-			fields = fields.Clone()
-		}
 		if event.Fields == nil {
 			event.Fields = mapstr.M{}
 		}
-		if af.overwrite {
-			event.Fields.DeepUpdate(fields)
+		if af.singleKeyInner != nil {
+			// Single-key wrapper optimization: clone only the inner map and
+			// build a temporary outer wrapper. This saves one map allocation
+			// per event vs cloning the full 2-level map tree, because the
+			// wrapper is a 1-entry map that Go can stack-allocate.
+			inner := af.singleKeyInner
+			if af.shared {
+				inner = inner.Clone()
+			}
+			wrapper := mapstr.M{af.singleKey: inner}
+			if af.overwrite {
+				event.Fields.DeepUpdate(wrapper)
+			} else {
+				event.Fields.DeepUpdateNoOverwrite(wrapper)
+			}
 		} else {
-			event.Fields.DeepUpdateNoOverwrite(fields)
+			fields := af.fields
+			if af.shared {
+				fields = fields.Clone()
+			}
+			if af.overwrite {
+				event.Fields.DeepUpdate(fields)
+			} else {
+				event.Fields.DeepUpdateNoOverwrite(fields)
+			}
 		}
 		return event, nil
 	}
