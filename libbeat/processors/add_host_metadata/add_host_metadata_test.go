@@ -478,6 +478,55 @@ func TestSkipAddingHostMetadata(t *testing.T) {
 	}
 }
 
+func TestAtomicTimestampExpired(t *testing.T) {
+	t.Run("zero value is always expired", func(t *testing.T) {
+		assert.True(t, atomicTimestampExpired(0, 5*time.Minute))
+	})
+	t.Run("zero ttl is always expired", func(t *testing.T) {
+		assert.True(t, atomicTimestampExpired(time.Now().UnixNano(), 0))
+	})
+	t.Run("negative ttl is always expired", func(t *testing.T) {
+		assert.True(t, atomicTimestampExpired(time.Now().UnixNano(), -1*time.Second))
+	})
+	t.Run("recent timestamp with long ttl is not expired", func(t *testing.T) {
+		assert.False(t, atomicTimestampExpired(time.Now().UnixNano(), 5*time.Minute))
+	})
+	t.Run("old timestamp with short ttl is expired", func(t *testing.T) {
+		old := time.Now().Add(-10 * time.Second).UnixNano()
+		assert.True(t, atomicTimestampExpired(old, 1*time.Second))
+	})
+}
+
+func TestLoadDataFastPath(t *testing.T) {
+	testConfig := conf.MustNewConfigFrom(map[string]interface{}{
+		"cache.ttl": "5m",
+	})
+
+	info := &mockHostInfo{}
+	factory := func() (hostInfo, error) {
+		return info, nil
+	}
+
+	p, err := newWithHostInfoFactory(testConfig, logptest.NewTestingLogger(t, ""), factory)
+	require.NoError(t, err)
+	proc, ok := p.(*addHostMetadata)
+	require.True(t, ok)
+
+	// Construction triggers one fetch.
+	assert.Equal(t, int64(1), info.HostInfoRequestCount.Load())
+
+	// Subsequent loadData calls should hit the fast path (no lock, no fetch)
+	// and return valid cached metadata.
+	for range 100 {
+		data, err := proc.loadData(false)
+		require.NoError(t, err)
+		require.NotNil(t, data)
+		_, err = data.GetValue("host.name")
+		require.NoError(t, err, "cached data should contain host.name")
+	}
+	assert.Equal(t, int64(1), info.HostInfoRequestCount.Load())
+}
+
 func TestFQDNEventSync(t *testing.T) {
 	hostname := "hostname"
 	fqdn := "fqdn"
