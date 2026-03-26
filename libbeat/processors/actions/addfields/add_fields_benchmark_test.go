@@ -251,6 +251,50 @@ func BenchmarkEventFieldsDeepUpdateDirect(b *testing.B) {
 	}
 }
 
+// BenchmarkFullPipeline simulates the complete elastic agent processing pipeline:
+// builtin metadata (ecs, host, agent) + elastic agent injected processors (6 add_fields).
+// This represents the real-world per-event cost of all add_fields processing.
+func BenchmarkFullPipeline(b *testing.B) {
+	// Builtin metadata (from MakeDefaultBeatSupport -> WithECS, WithHost, WithAgentMeta)
+	builtinMeta := NewAddFields(mapstr.M{
+		"ecs":   mapstr.M{"version": "8.0.0"},
+		"host":  mapstr.M{"name": "prod-server-01"},
+		"agent": mapstr.M{"ephemeral_id": "ephemeral-123", "id": "agent-uuid", "name": "prod-server-01", "type": "filebeat", "version": "8.12.0"},
+	}, true, false)
+
+	// Elastic agent injected processors (from generate.go)
+	agentProcessors := []beat.Processor{
+		NewAddFields(mapstr.M{
+			"elastic_agent": mapstr.M{"id": "agent-uuid", "snapshot": false, "version": "8.12.0"},
+		}, true, true),
+		NewAddFields(mapstr.M{
+			"agent": mapstr.M{"id": "agent-uuid"},
+		}, true, true),
+		NewAddFields(mapstr.M{
+			"@metadata": mapstr.M{"input_id": "logfile-system-default"},
+		}, true, true),
+		NewAddFields(mapstr.M{
+			"data_stream": mapstr.M{"type": "logs", "dataset": "system.syslog", "namespace": "default"},
+		}, true, true),
+		NewAddFields(mapstr.M{
+			"event": mapstr.M{"dataset": "system.syslog"},
+		}, true, true),
+		NewAddFields(mapstr.M{
+			"@metadata": mapstr.M{"stream_id": "stream-uuid-5678"},
+		}, true, true),
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		event := newTestEvent()
+		event, _ = builtinMeta.Run(event)
+		for _, p := range agentProcessors {
+			event, _ = p.Run(event)
+		}
+	}
+}
+
 // BenchmarkCloneSmallMap benchmarks cloning a small map (typical add_fields).
 func BenchmarkCloneSmallMap(b *testing.B) {
 	m := mapstr.M{
