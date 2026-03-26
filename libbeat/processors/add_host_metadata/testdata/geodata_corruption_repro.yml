@@ -1,29 +1,26 @@
 # geodata_corruption_repro.yml
 #
-# Reproduces a cache corruption bug in add_host_metadata's geoData handling.
+# Simpler reproduction: every event has geo.name overwritten. Without the
+# bug, this is just normal processor behavior. With the bug, it also
+# permanently corrupts the cached geoData — but since every event
+# overwrites anyway, the corruption is masked. See the conditional
+# variant (geodata_corruption_conditional.yml) for a more dramatic demo.
 #
 # Setup:
-#   echo '{"msg":"first"}' > /tmp/geo-bug-input.log
-#   echo '{"msg":"second"}' >> /tmp/geo-bug-input.log
-#   echo '{"msg":"third"}' >> /tmp/geo-bug-input.log
+#   echo 'hello world' > /tmp/geo-bug-input.log
+#   echo 'second line' >> /tmp/geo-bug-input.log
+#   echo 'third line' >> /tmp/geo-bug-input.log
 #
-# Run:
-#   ./filebeat -e -c geodata_corruption_repro.yml 2>/dev/null | jq '{msg: .msg, geo_name: .host.geo.name}'
+# Run (revert our fix first to reproduce):
+#   ./filebeat -e -c geodata_corruption_repro.yml 2>/dev/null \
+#     | jq '{message, geo_name: .host.geo.name}'
 #
-# Expected (all events should have the configured geo.name):
-#   {"msg": "first",  "geo_name": "datacenter-east"}
-#   {"msg": "second", "geo_name": "datacenter-east"}
-#   {"msg": "third",  "geo_name": "datacenter-east"}
-#
-# Actual (event 1 overwrites geo.name; events 2+ see the corrupted value):
-#   {"msg": "first",  "geo_name": "OVERWRITTEN"}
-#   {"msg": "second", "geo_name": "OVERWRITTEN"}
-#   {"msg": "third",  "geo_name": "OVERWRITTEN"}
-#
-# Root cause: add_host_metadata passes p.geoData to DeepUpdate without
-# cloning. DeepUpdate aliases the inner "geo" map into event.Fields.
-# The add_fields processor below then overwrites host.geo.name on the
-# SHARED cached map, corrupting it for all subsequent events.
+# All events will show geo_name="OVERWRITTEN" (both with and without
+# the bug fix, since add_fields runs unconditionally). The difference
+# is that WITHOUT the fix, the cached p.geoData map is permanently
+# modified — if you removed the add_fields processor and restarted,
+# the original "datacenter-east" value would still be gone within
+# the same process lifetime.
 
 filebeat.inputs:
   - type: filestream
@@ -32,8 +29,6 @@ filebeat.inputs:
       - /tmp/geo-bug-input.log
 
 processors:
-  # Step 1: add_host_metadata injects host.geo from config.
-  # The geoData map is cached and reused across all events WITHOUT cloning.
   - add_host_metadata:
       geo:
         name: "datacenter-east"
@@ -45,11 +40,6 @@ processors:
         region_iso_code: "US-NY"
         city_name: "New York"
 
-  # Step 2: Overwrite host.geo.name on every event.
-  # Because event.Fields["host"]["geo"] is a direct reference to the cached
-  # geoData map, this permanently changes the cached value. Even if this
-  # processor only ran on the FIRST event (via a when condition), all
-  # subsequent events would still see the overwritten value.
   - add_fields:
       target: "host.geo"
       fields:

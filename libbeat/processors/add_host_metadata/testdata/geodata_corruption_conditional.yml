@@ -1,31 +1,33 @@
 # geodata_corruption_conditional.yml
 #
-# A more dramatic demonstration: only the FIRST event's geo is modified,
-# but ALL subsequent events are corrupted because they share the same
-# cached map reference.
+# Demonstrates a cache corruption bug in add_host_metadata's geoData handling.
+# Only the FIRST event's geo is modified, but ALL subsequent events see the
+# corrupted value because they share the same cached map reference.
 #
 # Setup:
-#   echo '{"msg":"first","mutate":"yes"}' > /tmp/geo-bug-input.log
-#   echo '{"msg":"second"}' >> /tmp/geo-bug-input.log
-#   echo '{"msg":"third"}' >> /tmp/geo-bug-input.log
+#   echo 'MUTATE_GEO' > /tmp/geo-bug-input.log
+#   echo 'normal event' >> /tmp/geo-bug-input.log
+#   echo 'another normal event' >> /tmp/geo-bug-input.log
 #
-# Run:
+# Run (revert our fix first to reproduce):
 #   ./filebeat -e -c geodata_corruption_conditional.yml 2>/dev/null \
-#     | jq '{msg: .msg, geo_name: .host.geo.name}'
+#     | jq '{message, geo_name: .host.geo.name}'
 #
 # Expected:
-#   {"msg": "first",  "geo_name": "FIRST-EVENT-ONLY"}   <-- modified by script
-#   {"msg": "second", "geo_name": "datacenter-east"}     <-- original from config
-#   {"msg": "third",  "geo_name": "datacenter-east"}     <-- original from config
+#   {"message": "MUTATE_GEO",          "geo_name": "FIRST-EVENT-ONLY"}
+#   {"message": "normal event",        "geo_name": "datacenter-east"}
+#   {"message": "another normal event", "geo_name": "datacenter-east"}
 #
-# Actual:
-#   {"msg": "first",  "geo_name": "FIRST-EVENT-ONLY"}   <-- modified by script
-#   {"msg": "second", "geo_name": "FIRST-EVENT-ONLY"}   <-- CORRUPTED
-#   {"msg": "third",  "geo_name": "FIRST-EVENT-ONLY"}   <-- CORRUPTED
+# Actual (before fix):
+#   {"message": "MUTATE_GEO",          "geo_name": "FIRST-EVENT-ONLY"}
+#   {"message": "normal event",        "geo_name": "FIRST-EVENT-ONLY"}  <-- CORRUPTED
+#   {"message": "another normal event", "geo_name": "FIRST-EVENT-ONLY"}  <-- CORRUPTED
 #
-# The script processor only runs when mutate=yes (first event only), but
-# it modifies the shared cached geoData map through the aliased reference,
-# permanently corrupting it for all future events.
+# Root cause: add_host_metadata passes p.geoData to DeepUpdate without
+# cloning. DeepUpdate aliases the inner "geo" map reference into
+# event.Fields. The conditional add_fields below overwrites host.geo.name
+# on only the first event, but because the event's geo map IS the cached
+# map, the mutation permanently corrupts all future events.
 
 filebeat.inputs:
   - type: filestream
@@ -45,16 +47,15 @@ processors:
         region_iso_code: "US-NY"
         city_name: "New York"
 
+  # Only overwrite geo.name when the log line contains "MUTATE_GEO".
+  # This runs on only the first event, but corrupts ALL future events.
   - add_fields:
       target: "host.geo"
       fields:
         name: "FIRST-EVENT-ONLY"
       when:
-        has_fields: ["mutate"]
-
-  - drop_fields:
-      fields: ["mutate"]
-      ignore_missing: true
+        contains:
+          message: "MUTATE_GEO"
 
 output.console:
   pretty: false

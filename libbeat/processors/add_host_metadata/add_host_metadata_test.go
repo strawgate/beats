@@ -806,4 +806,17 @@ func TestGeoDataNotCorruptedBetweenEvents(t *testing.T) {
 	geoName2, err := event2.GetValue("host.geo.name")
 	require.NoError(t, err)
 	assert.Equal(t, "yerevan-am", geoName2, "geoData was corrupted by a previous event's downstream modification")
+
+	// Also verify that deleting a geo field from one event doesn't remove it
+	// from subsequent events. This simulates drop_fields or rename.
+	err = event2.Delete("host.geo.city_name")
+	require.NoError(t, err)
+
+	event3 := &beat.Event{Fields: mapstr.M{}, Timestamp: time.Now()}
+	event3, err = p.Run(event3)
+	require.NoError(t, err)
+
+	cityName3, err := event3.GetValue("host.geo.city_name")
+	require.NoError(t, err)
+	assert.Equal(t, "Yerevan", cityName3, "geoData city_name was deleted by a previous event's downstream modification")
 }
