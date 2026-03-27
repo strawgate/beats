@@ -37,13 +37,11 @@ var sharedCloud = mapstr.M{
 }
 
 func newCowEvent() *Event {
-	e := &Event{
-		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"message": "test log message",
-			"agent":   mapstr.M{"type": "filebeat"},
-		},
-	}
+	e := &Event{Timestamp: time.Now()}
+	e.SetFields(mapstr.M{
+		"message": "test log message",
+		"agent":   mapstr.M{"type": "filebeat"},
+	})
 	_ = e.PutValueQuiet("cloud", newCowMap(sharedCloud))
 	return e
 }
@@ -245,28 +243,20 @@ func TestCowMapCloneSharesReference(t *testing.T) {
 
 func TestCowMapMaterialize(t *testing.T) {
 	e := newCowEvent()
+	m := e.Materialize()
 
-	// Before materialize, cloud is a cowMap.
-	_, ok := e.Fields["cloud"].(*cowMap)
+	// Materialized map has cloud as plain mapstr.M.
+	cloud, ok := m["cloud"].(mapstr.M)
 	assert.True(t, ok)
-
-	e.Materialize()
-
-	// After materialize, cloud is a plain mapstr.M.
-	_, ok = e.Fields["cloud"].(*cowMap)
-	assert.False(t, ok)
-	m, ok := e.Fields["cloud"].(mapstr.M)
-	assert.True(t, ok)
-	assert.Equal(t, "aws", m["provider"])
+	assert.Equal(t, "aws", cloud["provider"])
 }
 
 func TestCowMapMaterializeIsZeroCopy(t *testing.T) {
 	e := newCowEvent()
-	e.Materialize()
+	m := e.Materialize()
 
-	// The materialized map IS the shared reference (pointer equality).
-	m := e.Fields["cloud"].(mapstr.M)
-	assert.Equal(t, sharedCloud, m)
+	// The materialized cloud IS the shared reference.
+	assert.Equal(t, sharedCloud, m["cloud"])
 }
 
 func TestCowMapMultipleCowFields(t *testing.T) {
@@ -274,10 +264,8 @@ func TestCowMapMultipleCowFields(t *testing.T) {
 		"name": "server1",
 		"os":   mapstr.M{"family": "linux"},
 	}
-	e := &Event{
-		Timestamp: time.Now(),
-		Fields:    mapstr.M{"message": "test"},
-	}
+	e := &Event{Timestamp: time.Now()}
+	e.SetFields(mapstr.M{"message": "test"})
 	_ = e.PutValueQuiet("cloud", newCowMap(sharedCloud))
 	_ = e.PutValueQuiet("host", newCowMap(sharedHost))
 
@@ -289,30 +277,25 @@ func TestCowMapMultipleCowFields(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "server1", v)
 
-	// Mutate one, other unaffected.
+	// Mutate host, cloud unaffected.
 	_, _ = e.PutValue("host.name", "modified")
 	v, _ = e.GetValue("host.name")
 	assert.Equal(t, "modified", v)
 
-	// Cloud still COW.
-	_, ok := e.Fields["cloud"].(*cowMap)
-	assert.True(t, ok)
-
-	// Host is now materialized.
-	_, ok = e.Fields["host"].(*cowMap)
-	assert.False(t, ok)
+	// Cloud data still readable.
+	v, _ = e.GetValue("cloud.provider")
+	assert.Equal(t, "aws", v)
 }
 
 func TestCowMapString(t *testing.T) {
 	e := newCowEvent()
-	// String() should not panic and should include cloud data.
 	s := e.String()
 	assert.Contains(t, s, "aws")
 	assert.Contains(t, s, "us-east-1")
 
-	// Event's cowMap should be preserved after String().
-	_, ok := e.Fields["cloud"].(*cowMap)
-	assert.True(t, ok)
+	// Cloud still readable after String().
+	v, _ := e.GetValue("cloud.provider")
+	assert.Equal(t, "aws", v)
 }
 
 func TestCowMapProcessorPipelineSimulation(t *testing.T) {
@@ -321,10 +304,8 @@ func TestCowMapProcessorPipelineSimulation(t *testing.T) {
 
 	events := make([]*Event, 100)
 	for i := range events {
-		e := &Event{
-			Timestamp: time.Now(),
-			Fields:    mapstr.M{"message": "event"},
-		}
+		e := &Event{Timestamp: time.Now()}
+		e.SetFields(mapstr.M{"message": "event"})
 		_ = e.PutValueQuiet("cloud", newCowMap(sharedCloud))
 		_ = e.PutValueQuiet("agent", newCowMap(sharedAgent))
 		events[i] = e

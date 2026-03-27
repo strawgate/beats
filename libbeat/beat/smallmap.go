@@ -184,3 +184,13 @@ func (s *SmallMap) Clear() {
 func (s *SmallMap) IsPromoted() bool {
 	return s.m != nil
 }
+
+// SmallMapFromMapStr creates a SmallMap populated from a mapstr.M.
+func SmallMapFromMapStr(m mapstr.M) SmallMap {
+	var s SmallMap
+	for k, v := range m {
+		s.Set(k, v)
+	}
+	return s
+}
+

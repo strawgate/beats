@@ -37,7 +37,7 @@ import (
 // --- GetValue ---
 
 func TestAcceptanceGetValueScalar(t *testing.T) {
-	e := &Event{Fields: mapstr.M{"message": "hello"}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{"message": "hello"})}
 
 	v, err := e.GetValue("message")
 	require.NoError(t, err)
@@ -45,9 +45,9 @@ func TestAcceptanceGetValueScalar(t *testing.T) {
 }
 
 func TestAcceptanceGetValueNested(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"cloud": mapstr.M{"provider": "aws", "region": "us-east-1"},
-	}}
+	})}
 
 	v, err := e.GetValue("cloud.provider")
 	require.NoError(t, err)
@@ -55,9 +55,9 @@ func TestAcceptanceGetValueNested(t *testing.T) {
 }
 
 func TestAcceptanceGetValueDeepNested(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"cloud": mapstr.M{"account": mapstr.M{"id": "123"}},
-	}}
+	})}
 
 	v, err := e.GetValue("cloud.account.id")
 	require.NoError(t, err)
@@ -65,9 +65,9 @@ func TestAcceptanceGetValueDeepNested(t *testing.T) {
 }
 
 func TestAcceptanceGetValueParentReturnsMap(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"cloud": mapstr.M{"provider": "aws", "region": "us-east-1"},
-	}}
+	})}
 
 	v, err := e.GetValue("cloud")
 	require.NoError(t, err)
@@ -78,14 +78,14 @@ func TestAcceptanceGetValueParentReturnsMap(t *testing.T) {
 }
 
 func TestAcceptanceGetValueMissing(t *testing.T) {
-	e := &Event{Fields: mapstr.M{"a": "b"}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{"a": "b"})}
 	_, err := e.GetValue("missing")
 	assert.Error(t, err)
 }
 
 func TestAcceptanceGetValueTimestamp(t *testing.T) {
 	now := time.Now()
-	e := &Event{Timestamp: now, Fields: mapstr.M{}}
+	e := &Event{Timestamp: now, fields: SmallMapFromMapStr(mapstr.M{})}
 
 	v, err := e.GetValue("@timestamp")
 	require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestAcceptanceGetValueTimestamp(t *testing.T) {
 }
 
 func TestAcceptanceGetValueMetadata(t *testing.T) {
-	e := &Event{Meta: mapstr.M{"pipeline": "test"}, Fields: mapstr.M{}}
+	e := &Event{Meta: mapstr.M{"pipeline": "test"}, fields: SmallMapFromMapStr(mapstr.M{})}
 
 	v, err := e.GetValue("@metadata.pipeline")
 	require.NoError(t, err)
@@ -101,7 +101,7 @@ func TestAcceptanceGetValueMetadata(t *testing.T) {
 }
 
 func TestAcceptanceGetValueMetadataKeyDirectly(t *testing.T) {
-	e := &Event{Meta: mapstr.M{"pipeline": "test"}, Fields: mapstr.M{}}
+	e := &Event{Meta: mapstr.M{"pipeline": "test"}, fields: SmallMapFromMapStr(mapstr.M{})}
 
 	_, err := e.GetValue("@metadata")
 	assert.Error(t, err, "direct @metadata access should return error")
@@ -116,7 +116,7 @@ func TestAcceptanceGetValueNilFields(t *testing.T) {
 // --- PutValue ---
 
 func TestAcceptancePutValueScalar(t *testing.T) {
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 
 	_, err := e.PutValue("message", "hello")
 	require.NoError(t, err)
@@ -127,7 +127,7 @@ func TestAcceptancePutValueScalar(t *testing.T) {
 }
 
 func TestAcceptancePutValueNested(t *testing.T) {
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 
 	_, err := e.PutValue("cloud.provider", "aws")
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestAcceptancePutValueNested(t *testing.T) {
 }
 
 func TestAcceptancePutValueOverwrite(t *testing.T) {
-	e := &Event{Fields: mapstr.M{"key": "old"}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{"key": "old"})}
 
 	old, err := e.PutValue("key", "new")
 	require.NoError(t, err)
@@ -149,9 +149,9 @@ func TestAcceptancePutValueOverwrite(t *testing.T) {
 }
 
 func TestAcceptancePutValuePreservesSiblings(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"cloud": mapstr.M{"provider": "aws"},
-	}}
+	})}
 
 	_, err := e.PutValue("cloud.region", "us-east-1")
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestAcceptancePutValuePreservesSiblings(t *testing.T) {
 
 func TestAcceptancePutValueTimestamp(t *testing.T) {
 	now := time.Now()
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 
 	_, err := e.PutValue("@timestamp", now)
 	require.NoError(t, err)
@@ -172,7 +172,7 @@ func TestAcceptancePutValueTimestamp(t *testing.T) {
 }
 
 func TestAcceptancePutValueMetadata(t *testing.T) {
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 
 	_, err := e.PutValue("@metadata.pipeline", "test")
 	require.NoError(t, err)
@@ -191,7 +191,7 @@ func TestAcceptancePutValueNilFields(t *testing.T) {
 }
 
 func TestAcceptancePutValueMap(t *testing.T) {
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 
 	_, err := e.PutValue("cloud", mapstr.M{"provider": "aws", "region": "us-east-1"})
 	require.NoError(t, err)
@@ -205,7 +205,7 @@ func TestAcceptancePutValueMap(t *testing.T) {
 // --- Delete ---
 
 func TestAcceptanceDeleteScalar(t *testing.T) {
-	e := &Event{Fields: mapstr.M{"a": "1", "b": "2"}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{"a": "1", "b": "2"})}
 
 	err := e.Delete("a")
 	require.NoError(t, err)
@@ -218,9 +218,9 @@ func TestAcceptanceDeleteScalar(t *testing.T) {
 }
 
 func TestAcceptanceDeleteNested(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"cloud": mapstr.M{"provider": "aws", "region": "us-east-1"},
-	}}
+	})}
 
 	err := e.Delete("cloud.provider")
 	require.NoError(t, err)
@@ -233,19 +233,19 @@ func TestAcceptanceDeleteNested(t *testing.T) {
 }
 
 func TestAcceptanceDeleteMissing(t *testing.T) {
-	e := &Event{Fields: mapstr.M{"a": "b"}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{"a": "b"})}
 	err := e.Delete("missing")
 	assert.Error(t, err)
 }
 
 func TestAcceptanceDeleteTimestamp(t *testing.T) {
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 	err := e.Delete("@timestamp")
 	assert.Error(t, err)
 }
 
 func TestAcceptanceDeleteMetadata(t *testing.T) {
-	e := &Event{Meta: mapstr.M{"pipeline": "test"}, Fields: mapstr.M{}}
+	e := &Event{Meta: mapstr.M{"pipeline": "test"}, fields: SmallMapFromMapStr(mapstr.M{})}
 
 	err := e.Delete("@metadata.pipeline")
 	require.NoError(t, err)
@@ -257,9 +257,9 @@ func TestAcceptanceDeleteMetadata(t *testing.T) {
 // --- HasKey ---
 
 func TestAcceptanceHasKey(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"cloud": mapstr.M{"provider": "aws"},
-	}}
+	})}
 
 	ok, _ := e.HasKey("cloud.provider")
 	assert.True(t, ok)
@@ -274,9 +274,9 @@ func TestAcceptanceHasKey(t *testing.T) {
 // --- DeepUpdate ---
 
 func TestAcceptanceDeepUpdateMerge(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"agent": mapstr.M{"type": "filebeat"},
-	}}
+	})}
 
 	e.DeepUpdate(mapstr.M{
 		"agent": mapstr.M{"id": "agent-123"},
@@ -289,9 +289,9 @@ func TestAcceptanceDeepUpdateMerge(t *testing.T) {
 }
 
 func TestAcceptanceDeepUpdateOverwrite(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"agent": mapstr.M{"type": "filebeat"},
-	}}
+	})}
 
 	e.DeepUpdate(mapstr.M{
 		"agent": mapstr.M{"type": "metricbeat"},
@@ -302,9 +302,9 @@ func TestAcceptanceDeepUpdateOverwrite(t *testing.T) {
 }
 
 func TestAcceptanceDeepUpdateNoOverwrite(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"agent": mapstr.M{"type": "filebeat"},
-	}}
+	})}
 
 	e.DeepUpdateNoOverwrite(mapstr.M{
 		"agent": mapstr.M{"type": "metricbeat", "id": "agent-123"},
@@ -319,7 +319,7 @@ func TestAcceptanceDeepUpdateNoOverwrite(t *testing.T) {
 func TestAcceptanceDeepUpdateTimestamp(t *testing.T) {
 	now := time.Now()
 	later := now.Add(time.Hour)
-	e := &Event{Timestamp: now, Fields: mapstr.M{}}
+	e := &Event{Timestamp: now, fields: SmallMapFromMapStr(mapstr.M{})}
 
 	e.DeepUpdate(mapstr.M{
 		"@timestamp": later,
@@ -332,7 +332,7 @@ func TestAcceptanceDeepUpdateTimestamp(t *testing.T) {
 }
 
 func TestAcceptanceDeepUpdateMetadata(t *testing.T) {
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 
 	e.DeepUpdate(mapstr.M{
 		"@metadata": mapstr.M{"pipeline": "test"},
@@ -354,7 +354,7 @@ func TestAcceptanceDeepUpdateInputMapNotMutated(t *testing.T) {
 	}
 	updateCopy := update.Clone()
 
-	e := &Event{Fields: mapstr.M{}}
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 	e.DeepUpdate(update)
 
 	assert.Equal(t, updateCopy, update, "input map must not be mutated by DeepUpdate")
@@ -366,10 +366,10 @@ func TestAcceptanceCloneIndependence(t *testing.T) {
 	e := &Event{
 		Timestamp: time.Now(),
 		Meta:      mapstr.M{"pipeline": "test"},
-		Fields: mapstr.M{
+		fields: SmallMapFromMapStr(mapstr.M{
 			"message": "hello",
 			"cloud":   mapstr.M{"provider": "aws"},
-		},
+		}),
 	}
 
 	c := e.Clone()
@@ -392,10 +392,10 @@ func TestAcceptanceCloneIndependence(t *testing.T) {
 func TestAcceptanceProcessorChain(t *testing.T) {
 	e := &Event{
 		Timestamp: time.Now(),
-		Fields: mapstr.M{
+		fields: SmallMapFromMapStr(mapstr.M{
 			"message": "test log",
 			"agent":   mapstr.M{"type": "filebeat"},
-		},
+		}),
 	}
 
 	// addFields: elastic_agent (overwrite=true, shared)
@@ -454,10 +454,10 @@ func TestAcceptanceProcessorChain(t *testing.T) {
 }
 
 func TestAcceptanceRenameSimulation(t *testing.T) {
-	e := &Event{Fields: mapstr.M{
+	e := &Event{fields: SmallMapFromMapStr(mapstr.M{
 		"message": "hello",
 		"source":  "stdin",
-	}}
+	})}
 
 	// Rename: source → input.source
 	v, _ := e.GetValue("source")

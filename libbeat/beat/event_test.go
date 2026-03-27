@@ -55,7 +55,7 @@ func TestEvent(t *testing.T) {
 			"metaLevel0Value2": "untouched",
 			"metaUntouchedMap": metaUntouchedMap,
 		},
-		Fields: mapstr.M{
+		fields: SmallMapFromMapStr(mapstr.M{
 			"a.b":               "c",
 			"fieldsLevel0Map":   fieldsNestedMap,
 			"fieldsLevel0Value": "fieldsvalue1",
@@ -63,7 +63,7 @@ func TestEvent(t *testing.T) {
 			// to verify that existing keys remain
 			"fieldsLevel0Value2": "untouched",
 			"fieldsUntouchedMap": fieldsUntouchedMap,
-		},
+		}),
 	}
 
 	t.Run("empty", func(t *testing.T) {
@@ -386,10 +386,10 @@ func TestEvent(t *testing.T) {
 					"a": 9,
 					"c": 10,
 				},
-				Fields: mapstr.M{
+				fields: SmallMapFromMapStr(mapstr.M{
 					"a": 9,
 					"c": 10,
-				},
+				}),
 			}
 
 			_, err := event.PutValue("a.c", 10)
@@ -402,9 +402,9 @@ func TestEvent(t *testing.T) {
 
 		t.Run("hierarchy", func(t *testing.T) {
 			event := &Event{
-				Fields: mapstr.M{
+				fields: SmallMapFromMapStr(mapstr.M{
 					"a.b": 1,
-				},
+				}),
 			}
 			err := event.Delete("a.b")
 			require.NoError(t, err)
@@ -421,7 +421,7 @@ func TestEvent(t *testing.T) {
 				},
 			}
 
-			require.Equal(t, expFields, event.Fields)
+			require.Equal(t, expFields, event.Fields())
 		})
 
 		t.Run("SetID", func(t *testing.T) {
@@ -436,12 +436,12 @@ func TestEvent(t *testing.T) {
 		cloned.SetErrorWithOption("message", false, "data", "field")
 		require.Equal(t, event, cloned)
 		expEvent := cloned.Clone()
-		expEvent.Fields[ErrorFieldKey] = mapstr.M{
+		_ = expEvent.PutValueQuiet(ErrorFieldKey, mapstr.M{
 			"message": "message",
 			"field":   "field",
 			"data":    "data",
 			"type":    "json",
-		}
+		})
 		cloned.SetErrorWithOption("message", true, "data", "field")
 		require.Equal(t, expEvent, cloned)
 	})
@@ -474,90 +474,83 @@ func TestEvent(t *testing.T) {
 			cloned := event.Clone()
 			cloned.DeepUpdate(nil)
 			require.Equal(t, event.Meta, cloned.Meta)
-			require.Equal(t, event.Fields, cloned.Fields)
+			require.Equal(t, event.Fields(), cloned.Fields())
 		})
 
 		t.Run("overwrite", func(t *testing.T) {
 			event := event.Clone()
 			event.DeepUpdate(update)
 
-			expEvent := &Event{
-				Timestamp: newTs,
-				Meta: mapstr.M{
-					"a.b": "c",
-					"metaLevel0Map": mapstr.M{
-						"metaLevel1Map": mapstr.M{
-							"metaLevel2Value": "metavalue3",
-							"new1":            "newmetavalue1",
-						},
+			expMeta := mapstr.M{
+				"a.b": "c",
+				"metaLevel0Map": mapstr.M{
+					"metaLevel1Map": mapstr.M{
+						"metaLevel2Value": "metavalue3",
+						"new1":            "newmetavalue1",
 					},
-					"metaLevel0Value":  "metareplaced1",
-					"metaLevel0Value2": "untouched",
-					"new2":             "newmetavalue2",
-					"metaUntouchedMap": metaUntouchedMap,
 				},
-				Fields: mapstr.M{
-					"a.b": "c",
-					"fieldsLevel0Map": mapstr.M{
-						"fieldsLevel1Map": mapstr.M{
-							"fieldsLevel2Value": "fieldsvalue3",
-							"new3":              "newfieldsvalue1",
-						},
-						"newmap": mapstr.M{
-							"new4": "newfieldsvalue2",
-						},
+				"metaLevel0Value":  "metareplaced1",
+				"metaLevel0Value2": "untouched",
+				"new2":             "newmetavalue2",
+				"metaUntouchedMap": metaUntouchedMap,
+			}
+			expFields := mapstr.M{
+				"a.b": "c",
+				"fieldsLevel0Map": mapstr.M{
+					"fieldsLevel1Map": mapstr.M{
+						"fieldsLevel2Value": "fieldsvalue3",
+						"new3":              "newfieldsvalue1",
 					},
-					"fieldsLevel0Value":  "fieldsreplaced1",
-					"fieldsLevel0Value2": "untouched",
-					"fieldsUntouchedMap": fieldsUntouchedMap,
+					"newmap": mapstr.M{
+						"new4": "newfieldsvalue2",
+					},
 				},
+				"fieldsLevel0Value":  "fieldsreplaced1",
+				"fieldsLevel0Value2": "untouched",
+				"fieldsUntouchedMap": fieldsUntouchedMap,
 			}
 
-			require.Equal(t, expEvent.Timestamp, event.Timestamp)
-			require.Equal(t, expEvent.Meta, event.Meta)
-			require.Equal(t, expEvent.Fields, event.Fields)
+			require.Equal(t, newTs, event.Timestamp)
+			require.Equal(t, expMeta, event.Meta)
+			require.Equal(t, expFields, event.Fields())
 		})
 
 		t.Run("no overwrite", func(t *testing.T) {
 			cloned := event.Clone()
 			cloned.DeepUpdateNoOverwrite(update)
 
-			expEvent := &Event{
-				// should have the original/non-overwritten timestamp value
-				Timestamp: event.Timestamp,
-				Meta: mapstr.M{
-					"a.b": "c",
-					"metaLevel0Map": mapstr.M{
-						"metaLevel1Map": mapstr.M{
-							"metaLevel2Value": "metavalue3",
-							"new1":            "newmetavalue1",
-						},
+			expMeta := mapstr.M{
+				"a.b": "c",
+				"metaLevel0Map": mapstr.M{
+					"metaLevel1Map": mapstr.M{
+						"metaLevel2Value": "metavalue3",
+						"new1":            "newmetavalue1",
 					},
-					"metaLevel0Value":  "metavalue1",
-					"metaLevel0Value2": "untouched",
-					"new2":             "newmetavalue2",
-					"metaUntouchedMap": metaUntouchedMap,
 				},
-				Fields: mapstr.M{
-					"a.b": "c",
-					"fieldsLevel0Map": mapstr.M{
-						"fieldsLevel1Map": mapstr.M{
-							"fieldsLevel2Value": "fieldsvalue3",
-							"new3":              "newfieldsvalue1",
-						},
-						"newmap": mapstr.M{
-							"new4": "newfieldsvalue2",
-						},
+				"metaLevel0Value":  "metavalue1",
+				"metaLevel0Value2": "untouched",
+				"new2":             "newmetavalue2",
+				"metaUntouchedMap": metaUntouchedMap,
+			}
+			expFields := mapstr.M{
+				"a.b": "c",
+				"fieldsLevel0Map": mapstr.M{
+					"fieldsLevel1Map": mapstr.M{
+						"fieldsLevel2Value": "fieldsvalue3",
+						"new3":              "newfieldsvalue1",
 					},
-					"fieldsLevel0Value":  "fieldsvalue1",
-					"fieldsLevel0Value2": "untouched",
-					"fieldsUntouchedMap": fieldsUntouchedMap,
+					"newmap": mapstr.M{
+						"new4": "newfieldsvalue2",
+					},
 				},
+				"fieldsLevel0Value":  "fieldsvalue1",
+				"fieldsLevel0Value2": "untouched",
+				"fieldsUntouchedMap": fieldsUntouchedMap,
 			}
 
-			require.Equal(t, expEvent.Timestamp, cloned.Timestamp)
-			require.Equal(t, expEvent.Meta, cloned.Meta)
-			require.Equal(t, expEvent.Fields, cloned.Fields)
+			require.Equal(t, event.Timestamp, cloned.Timestamp)
+			require.Equal(t, expMeta, cloned.Meta)
+			require.Equal(t, expFields, cloned.Fields())
 		})
 
 		t.Run("fast path - no special keys", func(t *testing.T) {
@@ -566,10 +559,10 @@ func TestEvent(t *testing.T) {
 			event := &Event{
 				Timestamp: time.Now(),
 				Meta:      mapstr.M{"existing_meta": "preserved"},
-				Fields: mapstr.M{
+				fields: SmallMapFromMapStr(mapstr.M{
 					"existing": "value",
 					"nested":   mapstr.M{"a": "1"},
-				},
+				}),
 			}
 
 			update := mapstr.M{
@@ -585,27 +578,28 @@ func TestEvent(t *testing.T) {
 			// Meta must not be changed
 			require.Equal(t, mapstr.M{"existing_meta": "preserved"}, event.Meta)
 			// Fields must be merged
-			require.Equal(t, "value", event.Fields["existing"])
-			require.Equal(t, "added", event.Fields["new_field"])
+			f := event.Fields()
+			require.Equal(t, "value", f["existing"])
+			require.Equal(t, "added", f["new_field"])
 			// Nested merge
-			nested, ok := event.Fields["nested"].(mapstr.M)
+			nested, ok := f["nested"].(mapstr.M)
 			require.True(t, ok)
 			require.Equal(t, "1", nested["a"])
 			require.Equal(t, "2", nested["b"])
 		})
 
 		t.Run("fast path - nil fields", func(t *testing.T) {
-			event := &Event{Fields: nil}
+			event := &Event{}
 			event.DeepUpdate(mapstr.M{"key": "value"})
-			require.Equal(t, mapstr.M{"key": "value"}, event.Fields)
+			require.Equal(t, mapstr.M{"key": "value"}, event.Fields())
 		})
 
 		t.Run("fast path no-overwrite - no special keys", func(t *testing.T) {
 			event := &Event{
-				Fields: mapstr.M{
+				fields: SmallMapFromMapStr(mapstr.M{
 					"existing": "original",
 					"nested":   mapstr.M{"a": "1"},
-				},
+				}),
 			}
 
 			update := mapstr.M{
@@ -616,9 +610,10 @@ func TestEvent(t *testing.T) {
 
 			event.DeepUpdateNoOverwrite(update)
 
-			require.Equal(t, "original", event.Fields["existing"])
-			require.Equal(t, "added", event.Fields["new_field"])
-			nested, ok := event.Fields["nested"].(mapstr.M)
+			f := event.Fields()
+			require.Equal(t, "original", f["existing"])
+			require.Equal(t, "added", f["new_field"])
+			nested, ok := f["nested"].(mapstr.M)
 			require.True(t, ok)
 			require.Equal(t, "1", nested["a"])
 			require.Equal(t, "2", nested["b"])
@@ -635,7 +630,7 @@ func TestEvent(t *testing.T) {
 			}
 			updateCopy := update.Clone()
 
-			event := &Event{Fields: mapstr.M{}}
+			event := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
 			event.DeepUpdate(update)
 
 			require.Equal(t, updateCopy, update,
@@ -650,9 +645,9 @@ func TestEvent(t *testing.T) {
 			Meta: mapstr.M{
 				"metakey": "metavalue",
 			},
-			Fields: mapstr.M{
+			fields: SmallMapFromMapStr(mapstr.M{
 				"key": "value",
-			},
+			}),
 		}
 
 		exp := mapstr.M{
@@ -682,10 +677,10 @@ func BenchmarkEventDeepUpdate_NoSpecialKeys(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		event := &Event{
 			Timestamp: time.Now(),
-			Fields: mapstr.M{
+			fields: SmallMapFromMapStr(mapstr.M{
 				"message": "test",
 				"host":    mapstr.M{"name": "testhost"},
-			},
+			}),
 		}
 		event.DeepUpdate(fields)
 	}
@@ -707,10 +702,10 @@ func BenchmarkEventDeepUpdate_WithSpecialKeys(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		event := &Event{
 			Timestamp: time.Now(),
-			Fields: mapstr.M{
+			fields: SmallMapFromMapStr(mapstr.M{
 				"message": "test",
 				"host":    mapstr.M{"name": "testhost"},
-			},
+			}),
 		}
 		event.DeepUpdate(fields)
 	}
@@ -726,9 +721,9 @@ func BenchmarkEventDeepUpdateNoOverwrite_NoSpecialKeys(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		event := &Event{
-			Fields: mapstr.M{
+			fields: SmallMapFromMapStr(mapstr.M{
 				"agent": mapstr.M{"id": "existing", "type": "filebeat"},
-			},
+			}),
 		}
 		event.DeepUpdateNoOverwrite(fields)
 	}

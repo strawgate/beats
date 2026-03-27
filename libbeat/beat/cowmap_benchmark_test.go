@@ -53,13 +53,12 @@ var (
 )
 
 func newBenchEvent() *Event {
-	return &Event{
-		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"message": "test log message",
-			"agent":   mapstr.M{"type": "filebeat"},
-		},
-	}
+	e := &Event{Timestamp: time.Now()}
+	e.SetFields(mapstr.M{
+		"message": "test log message",
+		"agent":   mapstr.M{"type": "filebeat"},
+	})
+	return e
 }
 
 // Real processor pipeline benchmarks are in
@@ -70,9 +69,9 @@ func newBenchEvent() *Event {
 func BenchmarkCloneCowVsDeep(b *testing.B) {
 	b.Run("DeepClone", func(b *testing.B) {
 		e := newBenchEvent()
-		e.Fields["cloud"] = cowBenchSharedCloud.Clone()
-		e.Fields["host"] = cowBenchSharedHost.Clone()
-		e.Fields["elastic_agent"] = cowBenchSharedElasticAgent.Clone()
+		_ = e.PutValueQuiet("cloud", cowBenchSharedCloud.Clone())
+		_ = e.PutValueQuiet("host", cowBenchSharedHost.Clone())
+		_ = e.PutValueQuiet("elastic_agent", cowBenchSharedElasticAgent.Clone())
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -82,9 +81,9 @@ func BenchmarkCloneCowVsDeep(b *testing.B) {
 
 	b.Run("CowClone", func(b *testing.B) {
 		e := newBenchEvent()
-		e.Fields["cloud"] = newCowMap(cowBenchSharedCloud)
-		e.Fields["host"] = newCowMap(cowBenchSharedHost)
-		e.Fields["elastic_agent"] = newCowMap(cowBenchSharedElasticAgent)
+		_ = e.PutValueQuiet("cloud", newCowMap(cowBenchSharedCloud))
+		_ = e.PutValueQuiet("host", newCowMap(cowBenchSharedHost))
+		_ = e.PutValueQuiet("elastic_agent", newCowMap(cowBenchSharedElasticAgent))
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {

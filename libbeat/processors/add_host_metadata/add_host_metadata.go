@@ -29,7 +29,6 @@ import (
 	"github.com/elastic/go-sysinfo/types"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
-	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	"github.com/elastic/beats/v7/libbeat/features"
 	"github.com/elastic/beats/v7/libbeat/processors"
 	jsprocessor "github.com/elastic/beats/v7/libbeat/processors/script/javascript/module/processor/registry"
@@ -137,7 +136,7 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 			if _, err := event.GetValue(key); err != nil {
 				_ = event.PutValueQuiet(key, beat.NewCowMap(m))
 			} else {
-				mapstrutil.DeepCopyUpdate(event.Fields(), mapstr.M{key: m})
+				event.DeepUpdate(mapstr.M{key: m})
 			}
 		} else {
 			_ = event.PutValueQuiet(key, val)
