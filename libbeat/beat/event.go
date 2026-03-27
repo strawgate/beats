@@ -52,13 +52,19 @@ const (
 type Event struct {
 	Timestamp time.Time
 	Meta      mapstr.M
-	Fields    mapstr.M
+	Fields    mapstr.M // Materialized view — call Render() before direct access.
 
 	// Private is for input-specific data. The input that populates this field
 	// is fully responsible for its management. No guarantees are given about
 	// the content of this field as other components are able to modify it.
 	Private    interface{}
 	TimeSeries bool // true if the event contains timeseries data
+
+	// flat is the internal flat key-value storage. When non-nil, GetValue/
+	// PutValue/Delete/DeepUpdate operate on flat storage instead of Fields.
+	// Call Render() to materialize flat storage back into Fields.
+	flat      *flatFields
+	flatDirty bool // true when flat has been modified since last Render
 }
 
 var (
@@ -73,6 +79,31 @@ var (
 // If Meta is nil, a new Meta dictionary is created.
 func (e *Event) SetID(id string) {
 	_, _ = e.PutValue(metadataKeyPrefix+"_id", id)
+}
+
+// EnableFlat converts the event's Fields to flat internal storage.
+// Subsequent GetValue/PutValue/Delete/DeepUpdate calls will operate
+// on the flat storage. Call Render() to materialize back to Fields.
+func (e *Event) EnableFlat() {
+	if e.flat != nil {
+		return // already enabled
+	}
+	e.flat = newFlatFields(32)
+	if e.Fields != nil {
+		e.flat.flattenFrom(e.Fields)
+	}
+	e.flatDirty = true
+}
+
+// Render materializes the flat storage back into Fields as a nested
+// mapstr.M. This should be called before the event is passed to the
+// output encoder or any code that accesses Fields directly.
+func (e *Event) Render() {
+	if e.flat == nil || !e.flatDirty {
+		return
+	}
+	e.Fields = e.flat.toMapstr()
+	e.flatDirty = false
 }
 
 // GetValue gets a value from the event. If the key does not exist then an error
@@ -96,6 +127,10 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return e.Meta.GetValue(subKey)
 	}
 
+	if e.flat != nil {
+		return e.flat.get(key)
+	}
+
 	if e.Fields == nil {
 		return nil, mapstr.ErrKeyNotFound
 	}
@@ -105,13 +140,21 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 
 // Clone creates an exact copy of the event
 func (e *Event) Clone() *Event {
-	return &Event{
+	c := &Event{
 		Timestamp:  e.Timestamp,
 		Meta:       e.Meta.Clone(),
-		Fields:     e.Fields.Clone(),
 		Private:    e.Private,
 		TimeSeries: e.TimeSeries,
 	}
+	if e.flat != nil {
+		c.flat = e.flat.clone()
+		c.flatDirty = true
+		c.Fields = c.flat.toMapstr()
+		c.flatDirty = false
+	} else {
+		c.Fields = e.Fields.Clone()
+	}
+	return c
 }
 
 // DeepUpdate recursively copies the key-value pairs from `d` to various properties of the event.
@@ -197,6 +240,17 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		return
 	}
 
+	if e.flat != nil {
+		e.flatDirty = true
+		switch mode {
+		case updateModeOverwrite:
+			e.flat.deepUpdate(d)
+		case updateModeNoOverwrite:
+			e.flat.deepUpdateNoOverwrite(d)
+		}
+		return
+	}
+
 	if e.Fields == nil {
 		e.Fields = mapstr.M{}
 	}
@@ -253,6 +307,11 @@ func (e *Event) PutValue(key string, v interface{}) (interface{}, error) {
 		return e.Meta.Put(subKey, v)
 	}
 
+	if e.flat != nil {
+		e.flatDirty = true
+		return e.flat.put(key, v)
+	}
+
 	if e.Fields == nil {
 		e.Fields = mapstr.M{}
 	}
@@ -277,6 +336,11 @@ func (e *Event) Delete(key string) error {
 			return mapstr.ErrKeyNotFound
 		}
 		return e.Meta.Delete(subKey)
+	}
+
+	if e.flat != nil {
+		e.flatDirty = true
+		return e.flat.delete(key)
 	}
 
 	if e.Fields == nil {
@@ -340,6 +404,10 @@ func (e *Event) HasKey(key string) (bool, error) {
 			return false, nil
 		}
 		return e.Meta.HasKey(subKey)
+	}
+
+	if e.flat != nil {
+		return e.flat.hasKey(key), nil
 	}
 
 	if e.Fields == nil {
