@@ -187,10 +187,32 @@ func (f *flatFields) clone() *flatFields {
 }
 
 // toMapstr materializes the flat storage into a nested mapstr.M.
+// Uses direct map navigation instead of mapstr.M.Put to avoid
+// the mapFind string scanning overhead.
 func (f *flatFields) toMapstr() mapstr.M {
 	result := mapstr.M{}
 	for k, v := range f.data {
-		_, _ = result.Put(k, v)
+		dot := strings.IndexByte(k, '.')
+		if dot < 0 {
+			// Top-level key — direct assignment.
+			result[k] = v
+			continue
+		}
+		// Navigate/create the nested map path.
+		m := result
+		for dot >= 0 {
+			segment := k[:dot]
+			k = k[dot+1:]
+			if sub, ok := m[segment].(mapstr.M); ok {
+				m = sub
+			} else {
+				next := mapstr.M{}
+				m[segment] = next
+				m = next
+			}
+			dot = strings.IndexByte(k, '.')
+		}
+		m[k] = v
 	}
 	return result
 }
