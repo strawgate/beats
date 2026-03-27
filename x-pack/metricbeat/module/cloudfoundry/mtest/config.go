@@ -25,5 +25,5 @@ func GetConfig(t *testing.T, metricset string) map[string]interface{} {
 
 // CleanFields removes fields that can contain data of real deployments
 func CleanFields(e beat.Event) {
-	e.Fields.Delete("cloudfoundry.tags.system_domain")
+	e.Delete("cloudfoundry.tags.system_domain")
 }

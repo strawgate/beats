@@ -70,7 +70,7 @@ func (t *timeseriesProcessor) Run(event *beat.Event) (*beat.Event, error) {
 		instanceFields := mapstr.M{}
 
 		// map all dimensions & values
-		for k, v := range event.Fields.Flatten() {
+		for k, v := range event.Flatten() {
 			if t.isDimension(k) {
 				instanceFields[k] = v
 			}

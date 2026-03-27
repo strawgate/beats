@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
-	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	"github.com/elastic/beats/v7/libbeat/processors"
 	jsprocessor "github.com/elastic/beats/v7/libbeat/processors/script/javascript/module/processor/registry"
 	cfg "github.com/elastic/elastic-agent-libs/config"
@@ -52,6 +51,7 @@ type addCloudMetadata struct {
 	initData      *initData
 	initDone      chan struct{}
 	metadata      mapstr.M
+	metadataCow   map[string]interface{} // pre-allocated cowMap wrappers per top-level key
 	logger        *logp.Logger
 }
 
@@ -111,6 +111,18 @@ func (p *addCloudMetadata) init() {
 			return
 		}
 		p.metadata = result.metadata
+		// Pre-allocate cowMap wrappers so Run() is zero-alloc.
+		p.metadataCow = make(map[string]interface{}, len(result.metadata))
+		for key, val := range result.metadata {
+			switch mv := val.(type) {
+			case mapstr.M:
+				p.metadataCow[key] = beat.NewCowMap(mv)
+			case map[string]interface{}:
+				p.metadataCow[key] = beat.NewCowMap(mapstr.M(mv))
+			default:
+				p.metadataCow[key] = val
+			}
+		}
 		p.logger.Infof("add_cloud_metadata: hosting provider type detected as %v, metadata=%v",
 			result.provider, result.metadata.String())
 	})
@@ -151,28 +163,17 @@ func (p *addCloudMetadata) Close() error {
 }
 
 func (p *addCloudMetadata) addMeta(event *beat.Event) error {
-	// Iterate the shared metadata map directly. Each value is deep-copied
-	// via deepCopyUpdate into a fresh map before being stored in the event,
-	// preserving the original PutValue (replace) semantics.
-	for key, metaVal := range p.metadata {
+	// Store pre-allocated cowMap wrappers — zero per-event allocation.
+	if event.Fields == nil {
+		event.Fields = mapstr.M{}
+	}
+	for key, cowVal := range p.metadataCow {
 		if !p.initData.overwrite {
-			v, _ := event.GetValue(key)
-			if v != nil {
+			if _, exists := event.Fields[key]; exists {
 				continue
 			}
 		}
-		switch mv := metaVal.(type) {
-		case mapstr.M:
-			fresh := make(mapstr.M, len(mv))
-			mapstrutil.DeepCopyUpdate(fresh, mv)
-			_, _ = event.PutValue(key, fresh)
-		case map[string]interface{}:
-			fresh := make(mapstr.M, len(mv))
-			mapstrutil.DeepCopyUpdate(fresh, mapstr.M(mv))
-			_, _ = event.PutValue(key, fresh)
-		default:
-			_, _ = event.PutValue(key, metaVal)
-		}
+		_ = event.PutValueQuiet(key, cowVal)
 	}
 	return nil
 }

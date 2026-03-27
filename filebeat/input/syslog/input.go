@@ -319,7 +319,7 @@ func newBeatEvent(timestamp time.Time, metadata inputsource.NetworkMetadata, fie
 		Fields: fields,
 	}
 	if metadata.RemoteAddr != nil {
-		event.Fields.Put("log.source.address", metadata.RemoteAddr.String())
+		event.PutValue("log.source.address", metadata.RemoteAddr.String())
 	}
 	return event
 }

@@ -593,7 +593,7 @@ func populateAuthFields(m *message, evt beat.Event, pbf *pb.Fields, fields *Prot
 		case "username":
 			username := string(kv[1])
 			if username != "" && username != "-" {
-				_, _ = evt.Fields.Put("user.name", username)
+				_, _ = evt.PutValue("user.name", username)
 				pbf.AddUser(username)
 			}
 		case "uri":

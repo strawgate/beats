@@ -284,14 +284,17 @@ func BenchmarkFullPipeline(b *testing.B) {
 		}, true, true),
 	}
 
+	// Production order: agent-injected processors first, then builtin.
+	// Agent processors are prepended to the pipeline by the elastic agent,
+	// so they run before the builtin (no-overwrite) processors.
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		event := newTestEvent()
-		event, _ = builtinMeta.Run(event)
 		for _, p := range agentProcessors {
 			event, _ = p.Run(event)
 		}
+		event, _ = builtinMeta.Run(event)
 	}
 }
 

@@ -46,7 +46,7 @@ func SOCKS5Layer(config *transport.ProxyConfig) Layer {
 
 		return afterDial(dialer, func(conn net.Conn) (net.Conn, error) {
 			timer.stop()
-			_, _ = event.Fields.Put("socks5.rtt.connect", look.RTT(timer.duration()))
+			_, _ = event.PutValue("socks5.rtt.connect", look.RTT(timer.duration()))
 			return conn, nil
 		}), nil
 	}

@@ -72,14 +72,14 @@ func TestAddMetaEventsAreIndependent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mutate the cloud map on event1.
-	cloud1, err := event1.Fields.GetValue("cloud")
+	cloud1, err := event1.GetValue("cloud")
 	require.NoError(t, err)
 	cloud1Map, ok := cloud1.(mapstr.M)
 	require.True(t, ok)
 	cloud1Map["provider"] = "mutated"
 
 	// event2's cloud.provider must be unaffected.
-	cloud2, err := event2.Fields.GetValue("cloud.provider")
+	cloud2, err := event2.GetValue("cloud.provider")
 	require.NoError(t, err)
 	assert.Equal(t, "test", cloud2, "mutating event1's cloud field must not affect event2")
 }
@@ -100,7 +100,7 @@ func TestAddMetaSharedMetadataUnmutated(t *testing.T) {
 	require.NoError(t, err)
 
 	// Aggressively mutate event1's cloud map.
-	cloud1, err := event1.Fields.GetValue("cloud")
+	cloud1, err := event1.GetValue("cloud")
 	require.NoError(t, err)
 	cloud1Map, ok := cloud1.(mapstr.M)
 	require.True(t, ok)
@@ -112,7 +112,7 @@ func TestAddMetaSharedMetadataUnmutated(t *testing.T) {
 	err = p.addMeta(event2)
 	require.NoError(t, err)
 
-	region2, err := event2.Fields.GetValue("cloud.region")
+	region2, err := event2.GetValue("cloud.region")
 	require.NoError(t, err)
 	assert.Equal(t, "us-east-1", region2, "shared metadata must not be corrupted by event mutation")
 
@@ -145,14 +145,14 @@ func TestAddMetaNestedMapsAreCloned(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mutate a deeply nested value in event1.
-	tags1, err := event1.Fields.GetValue("cloud.instance.tags")
+	tags1, err := event1.GetValue("cloud.instance.tags")
 	require.NoError(t, err)
 	tags1Map, ok := tags1.(mapstr.M)
 	require.True(t, ok)
 	tags1Map["env"] = "dev"
 
 	// event2's nested tags must be unchanged.
-	tags2, err := event2.Fields.GetValue("cloud.instance.tags.env")
+	tags2, err := event2.GetValue("cloud.instance.tags.env")
 	require.NoError(t, err)
 	assert.Equal(t, "prod", tags2, "deeply nested maps must be independently cloned per event")
 
@@ -187,7 +187,7 @@ func TestAddMetaOverwriteFalseSkipsExistingKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	// The existing "cloud" key must not be overwritten.
-	provider, err := event.Fields.GetValue("cloud.provider")
+	provider, err := event.GetValue("cloud.provider")
 	require.NoError(t, err)
 	assert.Equal(t, "original", provider, "overwrite=false must not replace existing cloud field")
 }
@@ -211,7 +211,7 @@ func TestAddMetaOverwriteTrueReplacesExistingKeys(t *testing.T) {
 	err := p.addMeta(event)
 	require.NoError(t, err)
 
-	provider, err := event.Fields.GetValue("cloud.provider")
+	provider, err := event.GetValue("cloud.provider")
 	require.NoError(t, err)
 	assert.Equal(t, "aws", provider, "overwrite=true must replace existing cloud field")
 }
@@ -243,11 +243,11 @@ func TestAddMetaScalarValuesPassedWithoutClone(t *testing.T) {
 	err := p.addMeta(event)
 	require.NoError(t, err)
 
-	provider, err := event.Fields.GetValue("cloud.provider")
+	provider, err := event.GetValue("cloud.provider")
 	require.NoError(t, err)
 	assert.Equal(t, "digitalocean", provider)
 
-	region, err := event.Fields.GetValue("cloud.region")
+	region, err := event.GetValue("cloud.region")
 	require.NoError(t, err)
 	assert.Equal(t, "nyc3", region)
 }
@@ -276,20 +276,20 @@ func TestAddMetaWithMultipleTopLevelKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	// Mutate event1's orchestrator.
-	cluster1, err := event1.Fields.GetValue("orchestrator.cluster")
+	cluster1, err := event1.GetValue("orchestrator.cluster")
 	require.NoError(t, err)
 	cluster1Map, ok := cluster1.(mapstr.M)
 	require.True(t, ok)
 	cluster1Map["name"] = "mutated"
 
 	// event2 must be unaffected.
-	name2, err := event2.Fields.GetValue("orchestrator.cluster.name")
+	name2, err := event2.GetValue("orchestrator.cluster.name")
 	require.NoError(t, err)
 	assert.Equal(t, "my-cluster", name2)
 
 	// cloud key must be present on both events.
-	provider1, _ := event1.Fields.GetValue("cloud.provider")
-	provider2, _ := event2.Fields.GetValue("cloud.provider")
+	provider1, _ := event1.GetValue("cloud.provider")
+	provider2, _ := event2.GetValue("cloud.provider")
 	assert.Equal(t, "aws", provider1)
 	assert.Equal(t, "aws", provider2)
 }

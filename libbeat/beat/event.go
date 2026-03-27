@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/common"
@@ -49,10 +50,21 @@ const (
 // Every event must have a timestamp and provide encodable Fields in `Fields`.
 // The `Meta`-fields can be used to pass additional meta-data to the outputs.
 // Output can optionally publish a subset of Meta, or ignore Meta.
+// maxInlineFields is the fixed capacity of the inline field entries array.
+// Sized for a typical event: message, cloud, host, agent, elastic_agent,
+// data_stream, event, ecs, plus a few input-specific fields.
+const maxInlineFields = 16
+
+// fieldEntry is a key-value pair stored in the inline fields array.
+type fieldEntry struct {
+	key   string
+	value interface{}
+}
+
 type Event struct {
 	Timestamp time.Time
 	Meta      mapstr.M
-	Fields    mapstr.M // Materialized view — call Render() before direct access.
+	fields    mapstr.M // cached materialized view — use Fields() to access
 
 	// Private is for input-specific data. The input that populates this field
 	// is fully responsible for its management. No guarantees are given about
@@ -60,11 +72,128 @@ type Event struct {
 	Private    interface{}
 	TimeSeries bool // true if the event contains timeseries data
 
-	// flat is the internal flat key-value storage. When non-nil, GetValue/
-	// PutValue/Delete/DeepUpdate operate on flat storage instead of Fields.
-	// Call Render() to materialize flat storage back into Fields.
-	flat      *flatFields
-	flatDirty bool // true when flat has been modified since last Render
+	// Inline field storage — avoids map allocation for top-level keys.
+	// Used by PutValueQuiet/cowField for fast O(n) access on small N.
+	// When nFields > 0, this is the source of truth; fields is populated
+	// by Materialize() before encoding.
+	entries  [maxInlineFields]fieldEntry
+	nFields  int
+	hasCow   bool // true when entries contains at least one cowMap value
+	overflow mapstr.M // spillover for events with > maxInlineFields top-level keys
+}
+
+// inlineGet looks up a top-level key in the inline entries array.
+func (e *Event) inlineGet(key string) (interface{}, bool) {
+	for i := 0; i < e.nFields; i++ {
+		if e.entries[i].key == key {
+			return e.entries[i].value, true
+		}
+	}
+	if e.overflow != nil {
+		v, ok := e.overflow[key]
+		return v, ok
+	}
+	return nil, false
+}
+
+// inlineSet sets a top-level key in the inline entries array.
+// Returns the old value if the key already existed.
+func (e *Event) inlineSet(key string, value interface{}) (interface{}, bool) {
+	for i := 0; i < e.nFields; i++ {
+		if e.entries[i].key == key {
+			old := e.entries[i].value
+			e.entries[i].value = value
+			return old, true
+		}
+	}
+	if e.overflow != nil {
+		if old, ok := e.overflow[key]; ok {
+			e.overflow[key] = value
+			return old, true
+		}
+	}
+	// New key.
+	if e.nFields < maxInlineFields {
+		e.entries[e.nFields] = fieldEntry{key: key, value: value}
+		e.nFields++
+	} else {
+		if e.overflow == nil {
+			e.overflow = make(mapstr.M, 4)
+		}
+		e.overflow[key] = value
+	}
+	return nil, false
+}
+
+// inlineDelete removes a top-level key from the inline entries array.
+func (e *Event) inlineDelete(key string) bool {
+	for i := 0; i < e.nFields; i++ {
+		if e.entries[i].key == key {
+			// Shift remaining entries down.
+			copy(e.entries[i:], e.entries[i+1:e.nFields])
+			e.nFields--
+			e.entries[e.nFields] = fieldEntry{} // clear last slot
+			return true
+		}
+	}
+	if e.overflow != nil {
+		if _, ok := e.overflow[key]; ok {
+			delete(e.overflow, key)
+			return true
+		}
+	}
+	return false
+}
+
+// Fields returns the event's fields as a mapstr.M.
+// This renders the internal inline entries into a map, unwrapping
+// any cowMap values. The returned map is safe for read-only use
+// (e.g., encoding). Callers that need a mutable copy should use
+// GetValue/PutValue methods or call Clone().
+func (e *Event) Fields() mapstr.M {
+	e.Materialize()
+	return e.fields
+}
+
+// SetFields sets the event's fields from a mapstr.M.
+// Used during event creation to initialize fields.
+func (e *Event) SetFields(m mapstr.M) {
+	e.fields = m
+	// Also populate inline entries from the map.
+	for k, v := range m {
+		e.inlineSet(k, v)
+	}
+}
+
+var eventPool = sync.Pool{
+	New: func() interface{} {
+		return &Event{}
+	},
+}
+
+// NewEvent returns an Event from the pool. The inline entries array
+// is zeroed and ready for use — no map allocation needed.
+func NewEvent() *Event {
+	e := eventPool.Get().(*Event) //nolint:errcheck
+	return e
+}
+
+// ReleaseEvent returns an Event to the pool for reuse.
+// The Event must not be referenced after this call.
+func ReleaseEvent(e *Event) {
+	// Clear inline entries to release references for GC.
+	for i := 0; i < e.nFields; i++ {
+		e.entries[i] = fieldEntry{}
+	}
+	e.nFields = 0
+	e.hasCow = false
+	e.overflow = nil
+	e.fields = nil
+	e.Timestamp = time.Time{}
+	e.Meta = nil
+	e.Private = nil
+	e.TimeSeries = false
+	eventPool.Put(e)
 }
 
 var (
@@ -79,31 +208,6 @@ var (
 // If Meta is nil, a new Meta dictionary is created.
 func (e *Event) SetID(id string) {
 	_, _ = e.PutValue(metadataKeyPrefix+"_id", id)
-}
-
-// EnableFlat converts the event's Fields to flat internal storage.
-// Subsequent GetValue/PutValue/Delete/DeepUpdate calls will operate
-// on the flat storage. Call Render() to materialize back to Fields.
-func (e *Event) EnableFlat() {
-	if e.flat != nil {
-		return // already enabled
-	}
-	e.flat = newFlatFields(32)
-	if e.Fields != nil {
-		e.flat.flattenFrom(e.Fields)
-	}
-	e.flatDirty = true
-}
-
-// Render materializes the flat storage back into Fields as a nested
-// mapstr.M. This should be called before the event is passed to the
-// output encoder or any code that accesses Fields directly.
-func (e *Event) Render() {
-	if e.flat == nil || !e.flatDirty {
-		return
-	}
-	e.Fields = e.flat.toMapstr()
-	e.flatDirty = false
 }
 
 // GetValue gets a value from the event. If the key does not exist then an error
@@ -127,15 +231,31 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return e.Meta.GetValue(subKey)
 	}
 
-	if e.flat != nil {
-		return e.flat.get(key)
-	}
-
-	if e.Fields == nil {
+	if e.fields == nil {
 		return nil, mapstr.ErrKeyNotFound
 	}
 
-	return e.Fields.GetValue(key)
+	if _, subKey, cm := e.cowField(key); cm != nil {
+		if subKey == "" {
+			// Return a clone so callers can't corrupt shared data.
+			return cm.shared.Clone(), nil
+		}
+		v, err := cm.shared.GetValue(subKey)
+		if err != nil {
+			return v, err
+		}
+		// Clone map values to prevent shared data corruption.
+		switch m := v.(type) {
+		case mapstr.M:
+			return m.Clone(), nil
+		case map[string]interface{}:
+			return mapstr.M(m).Clone(), nil
+		default:
+			return v, nil
+		}
+	}
+
+	return e.fields.GetValue(key)
 }
 
 // Clone creates an exact copy of the event
@@ -146,14 +266,8 @@ func (e *Event) Clone() *Event {
 		Private:    e.Private,
 		TimeSeries: e.TimeSeries,
 	}
-	if e.flat != nil {
-		c.flat = e.flat.clone()
-		c.flatDirty = true
-		c.Fields = c.flat.toMapstr()
-		c.flatDirty = false
-	} else {
-		c.Fields = e.Fields.Clone()
-	}
+	c.fields = e.cloneFields()
+	c.hasCow = e.hasCow
 	return c
 }
 
@@ -194,8 +308,8 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		}
 
 		// Temporary delete it from the update map,
-		// so we can do `e.Fields.DeepUpdate(d)` or
-		// `e.Fields.DeepUpdateNoOverwrite(d)` later
+		// so we can do `e.fields.DeepUpdate(d)` or
+		// `e.fields.DeepUpdateNoOverwrite(d)` later
 		delete(d, TimestampFieldKey)
 		defer func() {
 			d[TimestampFieldKey] = timestampValue
@@ -228,8 +342,8 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		}
 
 		// Temporary delete it from the update map,
-		// so we can do `e.Fields.DeepUpdate(d)` or
-		// `e.Fields.DeepUpdateNoOverwrite(d)` later
+		// so we can do `e.fields.DeepUpdate(d)` or
+		// `e.fields.DeepUpdateNoOverwrite(d)` later
 		delete(d, MetadataFieldKey)
 		defer func() {
 			d[MetadataFieldKey] = metaValue
@@ -240,26 +354,19 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		return
 	}
 
-	if e.flat != nil {
-		e.flatDirty = true
-		switch mode {
-		case updateModeOverwrite:
-			e.flat.deepUpdate(d)
-		case updateModeNoOverwrite:
-			e.flat.deepUpdateNoOverwrite(d)
-		}
-		return
+	if e.fields == nil {
+		e.fields = mapstr.M{}
 	}
 
-	if e.Fields == nil {
-		e.Fields = mapstr.M{}
-	}
+	// Materialize any cowMaps that overlap with map-valued update keys,
+	// so DeepUpdate can merge into them correctly.
+	e.materializeCowsForUpdate(d)
 
 	switch mode {
 	case updateModeOverwrite:
-		e.Fields.DeepUpdate(d)
+		e.fields.DeepUpdate(d)
 	case updateModeNoOverwrite:
-		e.Fields.DeepUpdateNoOverwrite(d)
+		e.fields.DeepUpdateNoOverwrite(d)
 	}
 }
 
@@ -307,16 +414,67 @@ func (e *Event) PutValue(key string, v interface{}) (interface{}, error) {
 		return e.Meta.Put(subKey, v)
 	}
 
-	if e.flat != nil {
-		e.flatDirty = true
-		return e.flat.put(key, v)
+	if e.fields == nil {
+		e.fields = mapstr.M{}
 	}
 
-	if e.Fields == nil {
-		e.Fields = mapstr.M{}
+	if topKey, subKey, cm := e.cowField(key); cm != nil {
+		if subKey == "" {
+			// Replacing the entire sub-tree.
+			e.fields[topKey] = v
+			return cm.shared.Clone(), nil
+		}
+		// Copy-on-write: clone shared data, then mutate the clone.
+		materialized := e.materializeCow(topKey, cm)
+		return materialized.Put(subKey, v)
 	}
 
-	return e.Fields.Put(key, v)
+	return e.fields.Put(key, v)
+}
+
+// PutValueQuiet sets a value without returning the old value.
+// Use this in processors where the old value is not needed — it avoids
+// cloning cowMap data that would otherwise be returned and discarded.
+func (e *Event) PutValueQuiet(key string, v interface{}) error {
+	if key == TimestampFieldKey {
+		_, err := e.setTimestamp(v)
+		return err
+	}
+	if key == MetadataFieldKey {
+		return ErrAlterMetadataKey
+	}
+
+	if subKey, ok := e.metadataSubKey(key); ok {
+		if e.Meta == nil {
+			e.Meta = mapstr.M{}
+		}
+		_, err := e.Meta.Put(subKey, v)
+		return err
+	}
+
+	if e.fields == nil {
+		e.fields = mapstr.M{}
+	}
+
+	if topKey, subKey, cm := e.cowField(key); cm != nil {
+		if subKey == "" {
+			if _, isCow := v.(*cowMap); isCow {
+				e.hasCow = true
+			}
+			e.fields[topKey] = v
+			e.nFields++
+			return nil
+		}
+		materialized := e.materializeCow(topKey, cm)
+		_, err := materialized.Put(subKey, v)
+		return err
+	}
+
+	if _, isCow := v.(*cowMap); isCow {
+		e.hasCow = true
+	}
+	_, err := e.fields.Put(key, v)
+	return err
 }
 
 // Delete deletes the given key from the event.
@@ -338,15 +496,59 @@ func (e *Event) Delete(key string) error {
 		return e.Meta.Delete(subKey)
 	}
 
-	if e.flat != nil {
-		e.flatDirty = true
-		return e.flat.delete(key)
-	}
-
-	if e.Fields == nil {
+	if e.fields == nil {
 		return mapstr.ErrKeyNotFound
 	}
-	return e.Fields.Delete(key)
+
+	if topKey, subKey, cm := e.cowField(key); cm != nil {
+		if subKey == "" {
+			// Deleting the entire sub-tree.
+			delete(e.fields, topKey)
+			return nil
+		}
+		// Copy-on-write: clone shared data, then delete from the clone.
+		materialized := e.materializeCow(topKey, cm)
+		return materialized.Delete(subKey)
+	}
+
+	return e.fields.Delete(key)
+}
+
+// CloneFields returns a deep copy of Fields with cowMap values properly
+// handled. cowMap entries are shared by reference (both copies point to
+// the same immutable data) — the COW mechanism handles isolation on write.
+func (e *Event) CloneFields() mapstr.M {
+	return e.cloneFields()
+}
+
+// cloneFields creates a copy of Fields. cowMap entries are shared
+// by reference (both clones point to the same immutable data).
+// Non-cowMap entries are deep-cloned normally.
+func (e *Event) cloneFields() mapstr.M {
+	if e.fields == nil {
+		return nil
+	}
+	hasCow := false
+	for _, v := range e.fields {
+		if _, ok := v.(*cowMap); ok {
+			hasCow = true
+			break
+		}
+	}
+	if !hasCow {
+		return e.fields.Clone()
+	}
+	c := make(mapstr.M, len(e.fields))
+	for k, v := range e.fields {
+		if _, ok := v.(*cowMap); ok {
+			c[k] = v // share cowMap reference
+		} else if m, ok := v.(mapstr.M); ok {
+			c[k] = m.Clone()
+		} else {
+			c[k] = v
+		}
+	}
+	return c
 }
 
 func (e *Event) metadataSubKey(key string) (string, bool) {
@@ -376,7 +578,7 @@ func (e *Event) SetErrorWithOption(message string, addErrKey bool, data string, 
 	if field != "" {
 		errorField["field"] = field
 	}
-	e.Fields[ErrorFieldKey] = errorField
+	e.fields[ErrorFieldKey] = errorField
 }
 
 // String returns a string representation of the event.
@@ -388,8 +590,43 @@ func (e *Event) String() string {
 	if e.Meta != nil {
 		m[MetadataFieldKey] = e.Meta
 	}
-	m.DeepUpdate(e.Fields)
+	// Unwrap cowMaps for display without modifying the event.
+	fields := e.fields
+	copied := false
+	for k, v := range fields {
+		if cm, ok := v.(*cowMap); ok {
+			if !copied {
+				fields = make(mapstr.M, len(e.fields))
+				for k2, v2 := range e.fields {
+					fields[k2] = v2
+				}
+				copied = true
+			}
+			fields[k] = cm.shared
+		}
+	}
+	m.DeepUpdate(fields)
 	return m.String()
+}
+
+// Flatten returns a flat representation of Fields with dot-separated keys.
+// cowMap values are materialized before flattening.
+func (e *Event) Flatten() mapstr.M {
+	if e.fields == nil {
+		return nil
+	}
+	e.Materialize()
+	return e.fields.Flatten()
+}
+
+// FlattenKeys returns a flat list of all dot-separated key paths in Fields.
+// cowMap values are materialized before flattening.
+func (e *Event) FlattenKeys() *[]string {
+	if e.fields == nil {
+		return nil
+	}
+	e.Materialize()
+	return e.fields.FlattenKeys()
 }
 
 // HasKey returns true if the key exist. If an error occurs then false is
@@ -406,13 +643,16 @@ func (e *Event) HasKey(key string) (bool, error) {
 		return e.Meta.HasKey(subKey)
 	}
 
-	if e.flat != nil {
-		return e.flat.hasKey(key), nil
-	}
-
-	if e.Fields == nil {
+	if e.fields == nil {
 		return false, nil
 	}
 
-	return e.Fields.HasKey(key)
+	if _, subKey, cm := e.cowField(key); cm != nil {
+		if subKey == "" {
+			return true, nil
+		}
+		return cm.shared.HasKey(subKey)
+	}
+
+	return e.fields.HasKey(key)
 }

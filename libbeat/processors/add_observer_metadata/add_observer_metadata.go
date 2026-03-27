@@ -86,16 +86,29 @@ func (p *observerMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		return nil, err
 	}
 
-	keyExists, _ := event.Fields.HasKey("observer")
+	keyExists, _ := event.HasKey("observer")
 
 	if p.config.Overwrite || !keyExists {
 		if p.config.Overwrite {
-			_ = event.Fields.Delete("observer")
+			_ = event.Delete("observer")
 		}
-		mapstrutil.DeepCopyUpdate(event.Fields, p.data.Get())
+		// Store each top-level key from the cached data as a cowMap
+		// when the key doesn't already exist. If it exists, merge.
+		data := p.data.Get()
+		for key, val := range data {
+			if m, ok := val.(mapstr.M); ok {
+				if _, exists := event.Fields[key]; !exists {
+					_ = event.PutValueQuiet(key, beat.NewCowMap(m))
+				} else {
+					mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{key: m})
+				}
+			} else {
+				_ = event.PutValueQuiet(key, val)
+			}
+		}
 
 		if len(p.geoData) > 0 {
-			event.Fields.DeepUpdate(p.geoData)
+			event.DeepUpdate(p.geoData)
 		}
 	}
 

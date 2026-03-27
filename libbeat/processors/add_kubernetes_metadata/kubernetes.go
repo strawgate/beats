@@ -366,7 +366,7 @@ func (k *kubernetesAnnotator) Run(event *beat.Event) (*beat.Event, error) {
 				_ = ociContainer.Delete("image")
 				ociContainer["image"] = mapstr.M{"name": img}
 			}
-			event.Fields.DeepUpdate(mapstr.M{"container": ociContainer})
+			event.DeepUpdate(mapstr.M{"container": ociContainer})
 		}
 	}
 
@@ -376,7 +376,7 @@ func (k *kubernetesAnnotator) Run(event *beat.Event) (*beat.Event, error) {
 	_ = kubeMeta.Delete("kubernetes.container.id")
 	_ = kubeMeta.Delete("kubernetes.container.runtime")
 	_ = kubeMeta.Delete("kubernetes.container.image")
-	event.Fields.DeepUpdate(kubeMeta)
+	event.DeepUpdate(kubeMeta)
 
 	return event, nil
 }

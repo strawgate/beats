@@ -148,7 +148,7 @@ func (n *nomadAnnotator) Run(event *beat.Event) (*beat.Event, error) {
 		return event, nil
 	}
 
-	event.Fields.DeepUpdate(mapstr.M{
+	event.DeepUpdate(mapstr.M{
 		"nomad": metadata.Clone(),
 	})
 

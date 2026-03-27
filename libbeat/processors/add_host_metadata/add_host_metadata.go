@@ -129,14 +129,25 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		return nil, fmt.Errorf("error loading data during event update: %w", err)
 	}
 
-	// The cached data must not be aliased into the event because downstream
-	// processors or outputs could mutate the event's fields. deepCopyUpdate
-	// merges the data while creating fresh nested maps in one pass, avoiding
-	// a separate Clone + DeepUpdate.
-	mapstrutil.DeepCopyUpdate(event.Fields, data)
+	// Store each top-level key from the cached data as a cowMap (copy-on-write)
+	// when the key doesn't already exist in the event. If the key exists,
+	// fall back to DeepCopyUpdate to merge with existing fields.
+	for key, val := range data {
+		if m, ok := val.(mapstr.M); ok {
+			if _, exists := event.Fields[key]; !exists {
+				_ = event.PutValueQuiet(key, beat.NewCowMap(m))
+			} else {
+				mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{key: m})
+			}
+		} else {
+			_ = event.PutValueQuiet(key, val)
+		}
+	}
 
 	if len(p.geoData) > 0 {
-		event.Fields.DeepUpdate(p.geoData)
+		// geoData merges into the host sub-tree, triggering copy-on-write
+		// for the "host" key if it was stored as a cowMap above.
+		event.DeepUpdate(p.geoData)
 	}
 	return event, nil
 }
@@ -263,7 +274,7 @@ func (p *addHostMetadata) String() string {
 
 func skipAddingHostMetadata(event *beat.Event) bool {
 	// If host fields exist(besides host.name added by libbeat) in event, skip add_host_metadata.
-	hostFields, err := event.Fields.GetValue("host")
+	hostFields, err := event.GetValue("host")
 
 	// Don't skip if there are no fields
 	if err != nil || hostFields == nil {

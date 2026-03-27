@@ -77,7 +77,7 @@ func (p prvdr) Sync(ev *beat.Event, pid uint32) error {
 			var i int
 			var ok bool
 			var parent types.Process
-			intr, err := ev.Fields.GetValue("process.parent.pid")
+			intr, err := ev.GetValue("process.parent.pid")
 			if err != nil {
 				goto out
 			}
@@ -92,7 +92,7 @@ func (p prvdr) Sync(ev *beat.Event, pid uint32) error {
 			}
 			pe.PIDs.Sid = parent.SessionLeader.PID
 
-			intr, err = ev.Fields.GetValue("process.working_directory")
+			intr, err = ev.GetValue("process.working_directory")
 			if err != nil {
 				goto out
 			}
@@ -115,7 +115,7 @@ func (p prvdr) Sync(ev *beat.Event, pid uint32) error {
 		}
 		p.db.InsertExit(pe)
 	case "setsid":
-		intr, err := ev.Fields.GetValue("auditd.result")
+		intr, err := ev.GetValue("auditd.result")
 		if err != nil {
 			return fmt.Errorf("syscall exit value not found")
 		}

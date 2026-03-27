@@ -97,7 +97,7 @@ func (d *addCloudFoundryMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		d.log.Debugf("failed to get application info for GUID(%s): %v", val, err)
 		return event, nil
 	}
-	event.Fields.DeepUpdate(mapstr.M{
+	event.DeepUpdate(mapstr.M{
 		"cloudfoundry": mapstr.M{
 			"app": mapstr.M{
 				"name": app.Name,

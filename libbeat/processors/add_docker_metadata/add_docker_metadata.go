@@ -153,7 +153,7 @@ func (d *addDockerMetadata) Run(event *beat.Event) (*beat.Event, error) {
 
 	// Extract CID from the filepath contained in the "log.file.path" field.
 	if d.sourceProcessor != nil {
-		lfp, _ := event.Fields.GetValue("log.file.path")
+		lfp, _ := event.GetValue("log.file.path")
 		if lfp != nil {
 			event, err = d.sourceProcessor.Run(event)
 			if err != nil {
@@ -218,7 +218,7 @@ func (d *addDockerMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		_, _ = meta.Put("container.id", container.ID)
 		_, _ = meta.Put("container.image.name", container.Image)
 		_, _ = meta.Put("container.name", container.Name)
-		event.Fields.DeepUpdate(meta)
+		event.DeepUpdate(meta)
 	} else {
 		d.log.Debugf("Container not found: cid=%s", cid)
 	}

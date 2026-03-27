@@ -195,7 +195,7 @@ func makeAddDynMetaProcessor(
 			dynFields = dynFields.Clone()
 		}
 
-		event.Fields.DeepUpdate(dynFields)
+		event.DeepUpdate(dynFields)
 	})
 }
 

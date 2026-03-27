@@ -50,7 +50,7 @@ func WriteJSONKeys(event *beat.Event, keys map[string]interface{}, expandKeys, o
 		removeKeys(keys, "@timestamp", "@metadata")
 
 		// Then, perform deep update without overwriting
-		event.Fields.DeepUpdateNoOverwrite(keys)
+		event.DeepUpdateNoOverwrite(keys)
 		return
 	}
 
@@ -108,7 +108,7 @@ func WriteJSONKeys(event *beat.Event, keys map[string]interface{}, expandKeys, o
 	// We have accounted for @timestamp, @metadata, type above. So let's remove these keys and
 	// deep update the event with the rest of the keys.
 	removeKeys(keys, "@timestamp", "@metadata", "type")
-	event.Fields.DeepUpdate(keys)
+	event.DeepUpdate(keys)
 }
 
 func removeKeys(keys map[string]interface{}, names ...string) {

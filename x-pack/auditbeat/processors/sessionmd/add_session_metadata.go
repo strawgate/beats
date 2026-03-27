@@ -223,7 +223,7 @@ func (p *addSessionMetadata) enrich(ev *beat.Event) (*beat.Event, error) {
 	}
 	processMap := fullProcess.ToMap()
 
-	if b, err := ev.Fields.HasKey("process"); !b || err != nil {
+	if b, err := ev.HasKey("process"); !b || err != nil {
 		return nil, fmt.Errorf("no process field in event")
 	}
 	m, ok := tryToMapStr(ev.Fields["process"])

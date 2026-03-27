@@ -43,13 +43,11 @@ type addFields struct {
 	// Used together with metaFields to avoid the generic deepUpdate path.
 	fieldsOnly mapstr.M
 
-	// singleKey is set when the fields map has exactly one top-level key
-	// wrapping an inner mapstr.M (e.g. {"elastic_agent": {"id": "...", ...}}).
-	// This is the dominant shape created by MakeFieldsProcessor/generateAddFieldsProcessor.
-	// When set, Run() clones only the inner map and builds a temporary wrapper,
-	// saving one map allocation per event vs cloning the entire tree.
-	singleKey      string
-	singleKeyInner mapstr.M
+	// cowFields is pre-allocated cowMap wrappers for shared fields.
+	// Each map-valued top-level key gets a cowMap, reused across all events
+	// (zero per-event allocation). Covers both single-key
+	// (e.g. {"elastic_agent": {...}}) and multi-key (e.g. {ecs, host, agent}).
+	cowFields map[string]interface{}
 }
 
 // FieldsKey is the default target key for the add_fields processor.
@@ -101,14 +99,21 @@ func NewAddFields(fields mapstr.M, shared bool, overwrite bool) beat.Processor {
 		}
 	}
 
-	// Detect single-key wrapper shape: {"target": mapstr.M{...}}.
-	// This is the dominant pattern from MakeFieldsProcessor and elastic agent.
-	// When shared=true, we only need to clone the inner map, not the outer wrapper.
-	if shared && !hasTimestamp && !hasMeta && len(fields) == 1 {
-		for k, v := range fields {
-			if inner, ok := v.(mapstr.M); ok {
-				af.singleKey = k
-				af.singleKeyInner = inner
+	// Pre-allocate cowMap wrappers for shared fields without special keys.
+	// Covers both single-key (e.g. {"elastic_agent": {...}}) and multi-key
+	// (e.g. builtin {ecs, host, agent}) processors.
+	if shared && !hasTimestamp && !hasMeta && len(fields) > 0 {
+		allMaps := true
+		for _, v := range fields {
+			if _, ok := v.(mapstr.M); !ok {
+				allMaps = false
+				break
+			}
+		}
+		if allMaps {
+			af.cowFields = make(map[string]interface{}, len(fields))
+			for k, v := range fields {
+				af.cowFields[k] = beat.NewCowMap(v.(mapstr.M))
 			}
 		}
 	}
@@ -118,27 +123,6 @@ func NewAddFields(fields mapstr.M, shared bool, overwrite bool) beat.Processor {
 
 func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	if event == nil || len(af.fields) == 0 {
-		return event, nil
-	}
-
-	// Single-key wrapper fast path: when fields have exactly one top-level key
-	// wrapping a nested mapstr.M (e.g. {"elastic_agent": {"id": "...", ...}}),
-	// clone only the inner map and build a temporary wrapper. This avoids
-	// cloning the outer map and bypasses event.deepUpdate's special key checks.
-	// This is the dominant shape from MakeFieldsProcessor and elastic agent.
-	if af.singleKeyInner != nil {
-		if event.Fields == nil {
-			event.Fields = mapstr.M{}
-		}
-		if af.shared && af.overwrite {
-			mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{af.singleKey: af.singleKeyInner})
-		} else if af.shared {
-			mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, mapstr.M{af.singleKey: af.singleKeyInner})
-		} else if af.overwrite {
-			event.Fields.DeepUpdate(mapstr.M{af.singleKey: af.singleKeyInner})
-		} else {
-			event.Fields.DeepUpdateNoOverwrite(mapstr.M{af.singleKey: af.singleKeyInner})
-		}
 		return event, nil
 	}
 
@@ -168,9 +152,31 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 			} else if af.shared {
 				mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, af.fieldsOnly)
 			} else if af.overwrite {
-				event.Fields.DeepUpdate(af.fieldsOnly)
+				event.DeepUpdate(af.fieldsOnly)
 			} else {
-				event.Fields.DeepUpdateNoOverwrite(af.fieldsOnly)
+				event.DeepUpdateNoOverwrite(af.fieldsOnly)
+			}
+		}
+		return event, nil
+	}
+
+	// Multi-key cowMap path: for shared fields with multiple top-level keys
+	// (e.g. builtin {ecs, host, agent}), store cowMap for keys that don't
+	// exist, merge for keys that do.
+	if af.cowFields != nil {
+		if event.Fields == nil {
+			event.Fields = mapstr.M{}
+		}
+		for k, cowVal := range af.cowFields {
+			if _, exists := event.Fields[k]; !exists {
+				_ = event.PutValueQuiet(k, cowVal)
+			} else if inner, ok := af.fields[k].(mapstr.M); ok {
+				// Key exists — merge with existing data.
+				if af.overwrite {
+					mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{k: inner})
+				} else {
+					mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, mapstr.M{k: inner})
+				}
 			}
 		}
 		return event, nil

@@ -181,7 +181,7 @@ func (c *publishClient) publishBulk(ctx context.Context, event publisher.Event, 
 		opType.String(): meta,
 	}
 
-	_, _ = event.Content.Fields.Put("timestamp", event.Content.Timestamp)
+	_, _ = event.Content.PutValue("timestamp", event.Content.Timestamp)
 
 	fields := mapstr.M{
 		"type": typ,

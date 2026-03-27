@@ -49,7 +49,7 @@ func receiveOneEvent(d testing.Driver, events <-chan beat.Event, timeout time.Du
 
 			// At this point in the pipeline the error has been converted to a
 			// string and written to error.message.
-			if v, err := event.Fields.GetValue("error.message"); err == nil {
+			if v, err := event.GetValue("error.message"); err == nil {
 				if errMsg, ok := v.(string); ok {
 					d.Error("error", errors.New(errMsg))
 					return
@@ -64,7 +64,7 @@ func receiveOneEvent(d testing.Driver, events <-chan beat.Event, timeout time.Du
 }
 
 func outputJSON(d testing.Driver, event *beat.Event) {
-	out := event.Fields.Clone()
+	out := event.CloneFields()
 	out.Put("@timestamp", common.Time(event.Timestamp))
 	jsonData, err := json.MarshalIndent(out, "", " ")
 	if err != nil {

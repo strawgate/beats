@@ -270,7 +270,7 @@ func runTest(t *testing.T, file string, module, metricSetName string, config Dat
 	for _, e := range events {
 		beatEvent := StandardizeEvent(metricSet, e, mb.AddMetricSetInfo)
 		// Overwrite service.address as the port changes every time
-		beatEvent.Fields.Put("service.address", "127.0.0.1:55555")
+		beatEvent.PutValue("service.address", "127.0.0.1:55555")
 		data = append(data, beatEvent.Fields)
 	}
 

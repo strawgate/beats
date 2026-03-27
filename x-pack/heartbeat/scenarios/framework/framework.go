@@ -315,7 +315,7 @@ type stateEvent struct {
 
 func AllStates(events []*beat.Event) (stateEvents []stateEvent) {
 	for _, e := range events {
-		if stateIface, _ := e.Fields.GetValue("state"); stateIface != nil {
+		if stateIface, _ := e.GetValue("state"); stateIface != nil {
 			state, ok := stateIface.(*monitorstate.State)
 			if !ok {
 				panic(fmt.Sprintf("state is not a monitorstate.State, got %v", state))

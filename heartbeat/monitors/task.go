@@ -120,7 +120,7 @@ func runPublishJob(job jobs.Job, pubClient beat.Client) []scheduler.TaskFunc {
 			clone := beat.Event{
 				Timestamp: event.Timestamp,
 				Meta:      event.Meta.Clone(),
-				Fields:    event.Fields.Clone(),
+				Fields:    event.CloneFields(),
 			}
 			pubClient.Publish(clone)
 		} else {

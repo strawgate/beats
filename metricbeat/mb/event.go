@@ -68,7 +68,7 @@ func (e *Event) BeatEvent(module, metricSet string, modifiers ...EventModifier) 
 	}
 
 	if len(e.ModuleFields) > 0 {
-		b.Fields.Put(module, e.ModuleFields)
+		b.PutValue(module, e.ModuleFields)
 		e.ModuleFields = nil
 	}
 
@@ -82,11 +82,11 @@ func (e *Event) BeatEvent(module, metricSet string, modifiers ...EventModifier) 
 		switch e.Namespace {
 		case ".":
 			// Add fields to root.
-			b.Fields.DeepUpdate(e.MetricSetFields)
+			b.DeepUpdate(e.MetricSetFields)
 		case "":
-			b.Fields.Put(module+"."+metricSet, e.MetricSetFields)
+			b.PutValue(module+"."+metricSet, e.MetricSetFields)
 		default:
-			b.Fields.Put(e.Namespace, e.MetricSetFields)
+			b.PutValue(e.Namespace, e.MetricSetFields)
 		}
 
 		e.MetricSetFields = nil

@@ -65,7 +65,7 @@ func generateFields(event *beat.Event, fieldsPerLevel, depth int) {
 			key += fmt.Sprintf("level%dfield%d", d, j)
 			key += "."
 		}
-		event.Fields.Put(key, "value")
+		event.PutValue(key, "value")
 		key = ""
 	}
 

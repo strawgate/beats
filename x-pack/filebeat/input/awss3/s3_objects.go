@@ -396,7 +396,7 @@ func (p *s3ObjectProcessor) readFile(r io.Reader, logger *logp.Logger) error {
 		message, err := reader.Next()
 		if len(message.Content) > 0 {
 			event := p.createEvent(string(message.Content), offset)
-			event.Fields.DeepUpdate(message.Fields)
+			event.DeepUpdate(message.Fields)
 			offset += int64(message.Bytes)
 			p.eventCallback(event)
 		}
@@ -446,12 +446,12 @@ func (p *s3ObjectProcessor) createEvent(message string, offset int64) beat.Event
 		},
 	}
 	if offset >= 0 {
-		event.Fields.Put("log.offset", offset)
+		event.PutValue("log.offset", offset)
 		event.SetID(objectID(p.s3Obj.S3.Object.LastModified, p.s3ObjHash, offset))
 	}
 
 	if len(p.s3Metadata) > 0 {
-		_, _ = event.Fields.Put("aws.s3.metadata", p.s3Metadata)
+		_, _ = event.PutValue("aws.s3.metadata", p.s3Metadata)
 	}
 
 	return event

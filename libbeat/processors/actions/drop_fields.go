@@ -100,7 +100,7 @@ func (f *dropFields) Run(event *beat.Event) (*beat.Event, error) {
 
 	// remove fields contained in regexp expressions
 	for _, regex := range f.RegexpFields {
-		for _, field := range *event.Fields.FlattenKeys() {
+		for _, field := range *event.FlattenKeys() {
 			if regex.MatchString(field) {
 				f.deleteField(event, field, &errs)
 			}
