@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
+	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	conf "github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/logp/logptest"
@@ -293,45 +294,29 @@ func TestAddMetaWithMultipleTopLevelKeys(t *testing.T) {
 	assert.Equal(t, "aws", provider2)
 }
 
-// TestCloneValueMapsAndNonMaps verifies the cloneValue helper for the
-// various value types it needs to handle.
-func TestCloneValueMapsAndNonMaps(t *testing.T) {
-	t.Run("mapstr.M is deep-cloned", func(t *testing.T) {
-		original := mapstr.M{"key": "value", "nested": mapstr.M{"a": 1}}
-		cloned, ok := cloneValue(original).(mapstr.M)
-		require.True(t, ok)
-		cloned["key"] = "changed"
-		nestedCloned, ok := cloned["nested"].(mapstr.M)
-		require.True(t, ok)
-		nestedCloned["a"] = 99
-		assert.Equal(t, "value", original["key"], "original must not be affected")
-		nestedOriginal, ok := original["nested"].(mapstr.M)
-		require.True(t, ok)
-		assert.Equal(t, 1, nestedOriginal["a"], "nested map must not be affected")
-	})
+// TestDeepCopyUpdateNoAliasing verifies that deepCopyUpdate creates
+// independent copies of nested maps in the cloud metadata.
+func TestDeepCopyUpdateNoAliasing(t *testing.T) {
+	src := mapstr.M{
+		"cloud": mapstr.M{
+			"provider": "aws",
+			"account":  mapstr.M{"id": "123"},
+		},
+	}
+	srcCopy := src.Clone()
 
-	t.Run("map[string]interface{} is deep-cloned", func(t *testing.T) {
-		original := map[string]interface{}{"key": "value"}
-		cloned, ok := cloneValue(original).(mapstr.M)
-		require.True(t, ok)
-		cloned["key"] = "changed"
-		assert.Equal(t, "value", original["key"])
-	})
+	dst := mapstr.M{}
+	mapstrutil.DeepCopyUpdate(dst, src)
 
-	t.Run("string is returned as-is", func(t *testing.T) {
-		v := cloneValue("hello")
-		assert.Equal(t, "hello", v)
-	})
+	// Mutate dst.
+	cloud, err := dst.GetValue("cloud")
+	require.NoError(t, err)
+	cloudMap, ok := cloud.(mapstr.M)
+	require.True(t, ok)
+	cloudMap["provider"] = "MUTATED"
 
-	t.Run("int is returned as-is", func(t *testing.T) {
-		v := cloneValue(42)
-		assert.Equal(t, 42, v)
-	})
-
-	t.Run("nil is returned as-is", func(t *testing.T) {
-		v := cloneValue(nil)
-		assert.Nil(t, v)
-	})
+	// Source must be unchanged.
+	assert.Equal(t, srcCopy, src, "source must not be affected by mutations to destination")
 }
 
 // BenchmarkAddCloudMetadata measures allocations per Run() call for a

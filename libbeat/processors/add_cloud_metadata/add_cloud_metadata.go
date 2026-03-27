@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
+	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	"github.com/elastic/beats/v7/libbeat/processors"
 	jsprocessor "github.com/elastic/beats/v7/libbeat/processors/script/javascript/module/processor/registry"
 	cfg "github.com/elastic/elastic-agent-libs/config"
@@ -149,39 +150,28 @@ func (p *addCloudMetadata) Close() error {
 	return nil
 }
 
-// cloneValue returns an independent copy of v suitable for storing in an event.
-// Nested maps are deep-cloned so that subsequent mutation of the event field
-// cannot affect the shared metadata stored in p.metadata.
-// Non-map values (strings, numbers, etc.) are immutable and returned as-is.
-func cloneValue(v interface{}) interface{} {
-	switch v := v.(type) {
-	case mapstr.M:
-		return v.Clone()
-	case map[string]interface{}:
-		return mapstr.M(v).Clone()
-	default:
-		return v
-	}
-}
-
 func (p *addCloudMetadata) addMeta(event *beat.Event) error {
-	// Iterate the shared metadata map directly — no outer-map clone needed since we
-	// only read the top-level keys. Each value is cloned individually before being
-	// stored in the event so that subsequent mutations to the event's fields cannot
-	// corrupt the shared p.metadata.
+	// Iterate the shared metadata map directly. Each value is deep-copied
+	// via deepCopyUpdate into a fresh map before being stored in the event,
+	// preserving the original PutValue (replace) semantics.
 	for key, metaVal := range p.metadata {
-		// If key exists in event already and overwrite flag is set to false, this processor will not overwrite the
-		// meta fields. For example aws module writes cloud.instance.* to events already, with overwrite=false,
-		// add_cloud_metadata should not overwrite these fields with new values.
 		if !p.initData.overwrite {
 			v, _ := event.GetValue(key)
 			if v != nil {
 				continue
 			}
 		}
-		_, err := event.PutValue(key, cloneValue(metaVal))
-		if err != nil {
-			return err
+		switch mv := metaVal.(type) {
+		case mapstr.M:
+			fresh := make(mapstr.M, len(mv))
+			mapstrutil.DeepCopyUpdate(fresh, mv)
+			_, _ = event.PutValue(key, fresh)
+		case map[string]interface{}:
+			fresh := make(mapstr.M, len(mv))
+			mapstrutil.DeepCopyUpdate(fresh, mapstr.M(mv))
+			_, _ = event.PutValue(key, fresh)
+		default:
+			_, _ = event.PutValue(key, metaVal)
 		}
 	}
 	return nil

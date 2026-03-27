@@ -29,6 +29,7 @@ import (
 	"github.com/elastic/go-sysinfo/types"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
+	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	"github.com/elastic/beats/v7/libbeat/features"
 	"github.com/elastic/beats/v7/libbeat/processors"
 	jsprocessor "github.com/elastic/beats/v7/libbeat/processors/script/javascript/module/processor/registry"
@@ -128,10 +129,11 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		return nil, fmt.Errorf("error loading data during event update: %w", err)
 	}
 
-	// Superficially this clone seems unnecessary, but it seems to have been
-	// applied as a fix a long time ago -- possibly there can be later processors
-	// or changes to an event that would affect the cached data?
-	event.Fields.DeepUpdate(data.Clone())
+	// The cached data must not be aliased into the event because downstream
+	// processors or outputs could mutate the event's fields. deepCopyUpdate
+	// merges the data while creating fresh nested maps in one pass, avoiding
+	// a separate Clone + DeepUpdate.
+	mapstrutil.DeepCopyUpdate(event.Fields, data)
 
 	if len(p.geoData) > 0 {
 		event.Fields.DeepUpdate(p.geoData)

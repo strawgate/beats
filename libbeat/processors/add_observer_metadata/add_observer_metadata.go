@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
+	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	"github.com/elastic/beats/v7/libbeat/processors"
 	jsprocessor "github.com/elastic/beats/v7/libbeat/processors/script/javascript/module/processor/registry"
 	"github.com/elastic/beats/v7/libbeat/processors/util"
@@ -91,7 +92,7 @@ func (p *observerMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		if p.config.Overwrite {
 			_ = event.Fields.Delete("observer")
 		}
-		event.Fields.DeepUpdate(p.data.Get().Clone())
+		mapstrutil.DeepCopyUpdate(event.Fields, p.data.Get())
 
 		if len(p.geoData) > 0 {
 			event.Fields.DeepUpdate(p.geoData)

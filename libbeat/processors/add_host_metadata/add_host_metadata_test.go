@@ -527,6 +527,34 @@ func TestLoadDataFastPath(t *testing.T) {
 	assert.Equal(t, int64(1), info.HostInfoRequestCount.Load())
 }
 
+func TestCachedDataNotCorruptedByDownstreamMutation(t *testing.T) {
+	testConfig := conf.MustNewConfigFrom(map[string]interface{}{
+		"cache.ttl": "5m",
+	})
+
+	info := &mockHostInfo{}
+	factory := func() (hostInfo, error) {
+		return info, nil
+	}
+
+	p, err := newWithHostInfoFactory(testConfig, logptest.NewTestingLogger(t, ""), factory)
+	require.NoError(t, err)
+
+	// Run the processor and mutate the result.
+	event1, err := p.Run(&beat.Event{Fields: mapstr.M{}})
+	require.NoError(t, err)
+	_, _ = event1.PutValue("host.name", "MUTATED")
+
+	// Run again — the second event must see the original cached data.
+	event2, err := p.Run(&beat.Event{Fields: mapstr.M{}})
+	require.NoError(t, err)
+
+	name, err := event2.GetValue("host.name")
+	require.NoError(t, err)
+	assert.NotEqual(t, "MUTATED", name,
+		"mutating one event's host.name must not affect subsequent events")
+}
+
 func TestFQDNEventSync(t *testing.T) {
 	hostname := "hostname"
 	fqdn := "fqdn"

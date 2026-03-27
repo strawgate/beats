@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/elastic/beats/v7/libbeat/beat"
+	"github.com/elastic/beats/v7/libbeat/common/mapstrutil"
 	conf "github.com/elastic/elastic-agent-libs/config"
 	"github.com/elastic/elastic-agent-libs/logp"
 	"github.com/elastic/elastic-agent-libs/mapstr"
@@ -126,18 +127,17 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	// cloning the outer map and bypasses event.deepUpdate's special key checks.
 	// This is the dominant shape from MakeFieldsProcessor and elastic agent.
 	if af.singleKeyInner != nil {
-		inner := af.singleKeyInner
-		if af.shared {
-			inner = inner.Clone()
-		}
 		if event.Fields == nil {
 			event.Fields = mapstr.M{}
 		}
-		wrapper := mapstr.M{af.singleKey: inner}
-		if af.overwrite {
-			event.Fields.DeepUpdate(wrapper)
+		if af.shared && af.overwrite {
+			mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{af.singleKey: af.singleKeyInner})
+		} else if af.shared {
+			mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, mapstr.M{af.singleKey: af.singleKeyInner})
+		} else if af.overwrite {
+			event.Fields.DeepUpdate(mapstr.M{af.singleKey: af.singleKeyInner})
 		} else {
-			event.Fields.DeepUpdateNoOverwrite(wrapper)
+			event.Fields.DeepUpdateNoOverwrite(mapstr.M{af.singleKey: af.singleKeyInner})
 		}
 		return event, nil
 	}
@@ -147,37 +147,55 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	// outer {"@metadata": inner} wrapper and bypasses event.deepUpdate's
 	// delete/defer pattern for @metadata handling.
 	if af.metaFields != nil {
-		metaFields := af.metaFields
-		if af.shared {
-			metaFields = metaFields.Clone()
-		}
 		if event.Meta == nil {
 			event.Meta = mapstr.M{}
 		}
-		if af.overwrite {
-			event.Meta.DeepUpdate(metaFields)
+		if af.shared && af.overwrite {
+			mapstrutil.DeepCopyUpdate(event.Meta, af.metaFields)
+		} else if af.shared {
+			mapstrutil.DeepCopyUpdateNoOverwrite(event.Meta, af.metaFields)
+		} else if af.overwrite {
+			event.Meta.DeepUpdate(af.metaFields)
 		} else {
-			event.Meta.DeepUpdateNoOverwrite(metaFields)
+			event.Meta.DeepUpdateNoOverwrite(af.metaFields)
 		}
 		if len(af.fieldsOnly) > 0 {
-			fieldsOnly := af.fieldsOnly
-			if af.shared {
-				fieldsOnly = fieldsOnly.Clone()
-			}
 			if event.Fields == nil {
 				event.Fields = mapstr.M{}
 			}
-			if af.overwrite {
-				event.Fields.DeepUpdate(fieldsOnly)
+			if af.shared && af.overwrite {
+				mapstrutil.DeepCopyUpdate(event.Fields, af.fieldsOnly)
+			} else if af.shared {
+				mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, af.fieldsOnly)
+			} else if af.overwrite {
+				event.Fields.DeepUpdate(af.fieldsOnly)
 			} else {
-				event.Fields.DeepUpdateNoOverwrite(fieldsOnly)
+				event.Fields.DeepUpdateNoOverwrite(af.fieldsOnly)
 			}
 		}
 		return event, nil
 	}
 
-	// General path: clone if shared, then use event.DeepUpdate which handles
-	// @timestamp, @metadata, and regular fields.
+	// General path: handles @timestamp, @metadata, and regular fields.
+	if event.Fields == nil {
+		event.Fields = mapstr.M{}
+	}
+
+	_, hasTimestamp := af.fields[beat.TimestampFieldKey]
+	_, hasMeta := af.fields[beat.MetadataFieldKey]
+
+	if !hasTimestamp && !hasMeta && af.shared {
+		// No special keys — safe to merge directly into Fields.
+		if af.overwrite {
+			mapstrutil.DeepCopyUpdate(event.Fields, af.fields)
+		} else {
+			mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, af.fields)
+		}
+		return event, nil
+	}
+
+	// Slow path: has @timestamp or @metadata, needs event.DeepUpdate
+	// which handles those special keys.
 	fields := af.fields
 	if af.shared {
 		fields = fields.Clone()
