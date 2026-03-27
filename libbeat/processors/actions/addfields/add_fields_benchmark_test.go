@@ -26,18 +26,20 @@ import (
 )
 
 func newTestEvent() *beat.Event {
-	return &beat.Event{
+	e := &beat.Event{
 		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"message": "test log message",
-			"host": mapstr.M{
-				"name": "testhost",
-			},
-			"agent": mapstr.M{
-				"type": "filebeat",
-			},
-		},
 	}
+	e.SetFields(mapstr.M{
+		"message": "test log message",
+		"host": mapstr.M{
+			"name": "testhost",
+		},
+		"agent": mapstr.M{
+			"type": "filebeat",
+		},
+	})
+	return e
+
 }
 
 // BenchmarkAddFieldsSimple benchmarks adding flat fields (shared=false, overwrite=true).
@@ -247,7 +249,7 @@ func BenchmarkEventFieldsDeepUpdateDirect(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		event := newTestEvent()
-		event.Fields.DeepUpdate(fields)
+		event.DeepUpdate(fields)
 	}
 }
 
