@@ -101,7 +101,7 @@ func WriteJSONKeys(event *beat.Event, keys map[string]interface{}, expandKeys, o
 				event.SetErrorWithOption(fmt.Sprintf("type not overwritten (invalid value [%s])", vstr), addErrKey, "", "")
 				continue
 			}
-			event.Fields[k] = vstr
+			event.PutValueQuiet(k, vstr)
 		}
 	}
 

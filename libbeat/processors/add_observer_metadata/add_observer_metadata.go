@@ -97,10 +97,10 @@ func (p *observerMetadata) Run(event *beat.Event) (*beat.Event, error) {
 		data := p.data.Get()
 		for key, val := range data {
 			if m, ok := val.(mapstr.M); ok {
-				if _, exists := event.Fields[key]; !exists {
+				if _, err := event.GetValue(key); err != nil {
 					_ = event.PutValueQuiet(key, beat.NewCowMap(m))
 				} else {
-					mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{key: m})
+					mapstrutil.DeepCopyUpdate(event.Fields(), mapstr.M{key: m})
 				}
 			} else {
 				_ = event.PutValueQuiet(key, val)

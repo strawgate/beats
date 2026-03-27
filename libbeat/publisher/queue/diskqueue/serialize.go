@@ -106,7 +106,7 @@ func (e *eventEncoder) encode_publisher_event(event publisher.Event) ([]byte, er
 		Timestamp: event.Content.Timestamp.UTC().UnixNano(),
 		Flags:     uint32(event.Flags),
 		Meta:      event.Content.Meta,
-		Fields:    event.Content.Fields,
+		Fields:    event.Content.Fields(),
 	})
 	if err != nil {
 		e.reset()
@@ -182,10 +182,13 @@ func (d *eventDecoder) decodeJSONAndCBOR() (publisher.Event, error) {
 
 	return publisher.Event{
 		Flags: publisher.EventFlags(to.Flags),
-		Content: beat.Event{
-			Timestamp: time.Unix(0, to.Timestamp),
-			Fields:    to.Fields,
-			Meta:      to.Meta,
-		},
+		Content: func() beat.Event {
+			e := beat.Event{
+				Timestamp: time.Unix(0, to.Timestamp),
+				Meta:      to.Meta,
+			}
+			e.SetFields(to.Fields)
+			return e
+		}(),
 	}, nil
 }

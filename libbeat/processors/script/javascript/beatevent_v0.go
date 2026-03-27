@@ -72,7 +72,9 @@ func newBeatEventV0Constructor(s Session) func(call goja.ConstructorCall) *goja.
 			obj: call.This,
 		}
 		evt.init()
-		_ = evt.reset(&beat.Event{Fields: fields})
+		e := &beat.Event{}
+		e.SetFields(fields)
+		_ = evt.reset(e)
 		return nil
 	}
 }
@@ -233,7 +235,7 @@ func (e *beatEventV0) tag(call goja.FunctionCall) goja.Value {
 
 	tag := call.Argument(0).String()
 
-	if err := appendString(e.inner.Fields, "tags", tag, true); err != nil {
+	if err := appendString(e.inner.Fields(), "tags", tag, true); err != nil {
 		panic(err)
 	}
 	return goja.Undefined()
@@ -254,7 +256,7 @@ func (e *beatEventV0) appendTo(call goja.FunctionCall) goja.Value {
 	field := call.Argument(0).String()
 	value := call.Argument(1).String()
 
-	if err := appendString(e.inner.Fields, field, value, false); err != nil {
+	if err := appendString(e.inner.Fields(), field, value, false); err != nil {
 		panic(err)
 	}
 	return goja.Undefined()

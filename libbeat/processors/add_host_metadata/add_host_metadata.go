@@ -134,10 +134,10 @@ func (p *addHostMetadata) Run(event *beat.Event) (*beat.Event, error) {
 	// fall back to DeepCopyUpdate to merge with existing fields.
 	for key, val := range data {
 		if m, ok := val.(mapstr.M); ok {
-			if _, exists := event.Fields[key]; !exists {
+			if _, err := event.GetValue(key); err != nil {
 				_ = event.PutValueQuiet(key, beat.NewCowMap(m))
 			} else {
-				mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{key: m})
+				mapstrutil.DeepCopyUpdate(event.Fields(), mapstr.M{key: m})
 			}
 		} else {
 			_ = event.PutValueQuiet(key, val)

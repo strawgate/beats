@@ -93,7 +93,7 @@ func (p *processor) Run(event *beat.Event) (*beat.Event, error) {
 	}
 	if err != nil {
 		if err := mapstr.AddTagsWithKey(
-			event.Fields,
+			event.Fields(),
 			beat.FlagField,
 			[]string{flagParsingError},
 		); err != nil {

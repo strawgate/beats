@@ -26,10 +26,11 @@ import (
 )
 
 func MakeEvent(fields mapstr.M) publisher.Event {
+	content := beat.Event{
+		Timestamp: time.Now(),
+	}
+	content.SetFields(fields)
 	return publisher.Event{
-		Content: beat.Event{
-			Timestamp: time.Now(),
-			Fields:    fields,
-		},
+		Content: content,
 	}
 }

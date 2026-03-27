@@ -93,10 +93,11 @@ func (m *Message) ToEvent() beat.Event {
 		m.Fields["message"] = string(m.Content)
 	}
 
-	return beat.Event{
+	e := beat.Event{
 		Timestamp: m.Ts,
 		Meta:      m.Meta,
-		Fields:    m.Fields,
 		Private:   m.Private,
 	}
+	e.SetFields(m.Fields)
+	return e
 }

@@ -69,9 +69,9 @@ func FieldsForBeat(beat string, version string) mapstr.M {
 // if execution or event field expansion fails.
 func (fs *TimestampFormatString) Run(timestamp time.Time) (string, error) {
 	placeholderEvent := &beat.Event{
-		Fields:    fs.fields,
 		Timestamp: timestamp,
 	}
+	placeholderEvent.SetFields(fs.fields)
 	return fs.eventFormatString.Run(placeholderEvent)
 }
 

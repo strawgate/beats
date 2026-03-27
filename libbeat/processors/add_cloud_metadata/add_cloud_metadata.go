@@ -164,12 +164,12 @@ func (p *addCloudMetadata) Close() error {
 
 func (p *addCloudMetadata) addMeta(event *beat.Event) error {
 	// Store pre-allocated cowMap wrappers — zero per-event allocation.
-	if event.Fields == nil {
-		event.Fields = mapstr.M{}
+	if event.Fields() == nil {
+		event.SetFields(mapstr.M{})
 	}
 	for key, cowVal := range p.metadataCow {
 		if !p.initData.overwrite {
-			if _, exists := event.Fields[key]; exists {
+			if _, err := event.GetValue(key); err == nil {
 				continue
 			}
 		}

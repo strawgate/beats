@@ -82,7 +82,7 @@ func (p *processor) Run(event *beat.Event) (*beat.Event, error) {
 	for field, target := range p.reverseFlat {
 		if err := p.processField(field, target, p.Action, event); err != nil {
 			p.log.Debugf("DNS processor failed: %v", err)
-			tagOnce.Do(func() { _ = mapstr.AddTags(event.Fields, p.TagOnFailure) })
+			tagOnce.Do(func() { _ = mapstr.AddTags(event.Fields(), p.TagOnFailure) })
 		}
 	}
 	return event, nil

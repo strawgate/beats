@@ -81,9 +81,9 @@ func (t *timeseriesProcessor) Run(event *beat.Event) (*beat.Event, error) {
 			// this should not happen, keep the event in any case
 			return event, err
 		}
-		event.Fields["timeseries"] = mapstr.M{
+		event.PutValueQuiet("timeseries", mapstr.M{
 			"instance": h,
-		}
+		})
 	}
 
 	return event, nil

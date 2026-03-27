@@ -51,7 +51,7 @@ type moveFields struct {
 
 func (u moveFields) Run(event *beat.Event) (*beat.Event, error) {
 	event.Materialize()
-	root := event.Fields.Clone()
+	root := event.CloneFields()
 	parent := root
 	if p := u.config.From; p != "" {
 		parentValue, err := root.GetValue(p)
@@ -93,7 +93,7 @@ func (u moveFields) Run(event *beat.Event) (*beat.Event, error) {
 		}
 	}
 
-	event.Fields = root
+	event.SetFields(root)
 	return event, nil
 }
 

@@ -144,13 +144,13 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 			event.Meta.DeepUpdateNoOverwrite(af.metaFields)
 		}
 		if len(af.fieldsOnly) > 0 {
-			if event.Fields == nil {
-				event.Fields = mapstr.M{}
+			if event.Fields() == nil {
+				event.SetFields(mapstr.M{})
 			}
 			if af.shared && af.overwrite {
-				mapstrutil.DeepCopyUpdate(event.Fields, af.fieldsOnly)
+				mapstrutil.DeepCopyUpdate(event.Fields(), af.fieldsOnly)
 			} else if af.shared {
-				mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, af.fieldsOnly)
+				mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields(), af.fieldsOnly)
 			} else if af.overwrite {
 				event.DeepUpdate(af.fieldsOnly)
 			} else {
@@ -164,18 +164,18 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	// (e.g. builtin {ecs, host, agent}), store cowMap for keys that don't
 	// exist, merge for keys that do.
 	if af.cowFields != nil {
-		if event.Fields == nil {
-			event.Fields = mapstr.M{}
+		if event.Fields() == nil {
+			event.SetFields(mapstr.M{})
 		}
 		for k, cowVal := range af.cowFields {
-			if _, exists := event.Fields[k]; !exists {
+			if _, err := event.GetValue(k); err != nil {
 				_ = event.PutValueQuiet(k, cowVal)
 			} else if inner, ok := af.fields[k].(mapstr.M); ok {
 				// Key exists — merge with existing data.
 				if af.overwrite {
-					mapstrutil.DeepCopyUpdate(event.Fields, mapstr.M{k: inner})
+					mapstrutil.DeepCopyUpdate(event.Fields(), mapstr.M{k: inner})
 				} else {
-					mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, mapstr.M{k: inner})
+					mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields(), mapstr.M{k: inner})
 				}
 			}
 		}
@@ -183,8 +183,8 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	}
 
 	// General path: handles @timestamp, @metadata, and regular fields.
-	if event.Fields == nil {
-		event.Fields = mapstr.M{}
+	if event.Fields() == nil {
+		event.SetFields(mapstr.M{})
 	}
 
 	_, hasTimestamp := af.fields[beat.TimestampFieldKey]
@@ -193,9 +193,9 @@ func (af *addFields) Run(event *beat.Event) (*beat.Event, error) {
 	if !hasTimestamp && !hasMeta && af.shared {
 		// No special keys — safe to merge directly into Fields.
 		if af.overwrite {
-			mapstrutil.DeepCopyUpdate(event.Fields, af.fields)
+			mapstrutil.DeepCopyUpdate(event.Fields(), af.fields)
 		} else {
-			mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields, af.fields)
+			mapstrutil.DeepCopyUpdateNoOverwrite(event.Fields(), af.fields)
 		}
 		return event, nil
 	}
