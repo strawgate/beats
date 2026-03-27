@@ -54,12 +54,13 @@ var (
 )
 
 func newPipelineEvent() *beat.Event {
-	return &beat.Event{
+	e := &beat.Event{
 		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"message": "test log message",
-		},
 	}
+	e.SetFields(mapstr.M{
+		"message": "test log message",
+	})
+	return e
 }
 
 // renameProc simulates a rename processor (message -> event.original).
@@ -145,7 +146,7 @@ func BenchmarkRealProcessorPipelinePooled(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		e := beat.NewEvent()
 		e.Timestamp = time.Now()
-		e.Fields["message"] = "test log message"
+		_ = e.PutValueQuiet("message", "test log message")
 		for _, p := range agentProcs {
 			e, _ = p.Run(e)
 		}

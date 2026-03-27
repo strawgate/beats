@@ -50,118 +50,29 @@ const (
 // Every event must have a timestamp and provide encodable Fields in `Fields`.
 // The `Meta`-fields can be used to pass additional meta-data to the outputs.
 // Output can optionally publish a subset of Meta, or ignore Meta.
-// maxInlineFields is the fixed capacity of the inline field entries array.
-// Sized for a typical event: message, cloud, host, agent, elastic_agent,
-// data_stream, event, ecs, plus a few input-specific fields.
-const maxInlineFields = 16
-
-// fieldEntry is a key-value pair stored in the inline fields array.
-type fieldEntry struct {
-	key   string
-	value interface{}
-}
-
 type Event struct {
 	Timestamp time.Time
 	Meta      mapstr.M
-	fields    mapstr.M // cached materialized view — use Fields() to access
+	fields SmallMap // primary field storage
 
 	// Private is for input-specific data. The input that populates this field
 	// is fully responsible for its management. No guarantees are given about
 	// the content of this field as other components are able to modify it.
 	Private    interface{}
 	TimeSeries bool // true if the event contains timeseries data
-
-	// Inline field storage — avoids map allocation for top-level keys.
-	// Used by PutValueQuiet/cowField for fast O(n) access on small N.
-	// When nFields > 0, this is the source of truth; fields is populated
-	// by Materialize() before encoding.
-	entries  [maxInlineFields]fieldEntry
-	nFields  int
-	hasCow   bool // true when entries contains at least one cowMap value
-	overflow mapstr.M // spillover for events with > maxInlineFields top-level keys
 }
 
-// inlineGet looks up a top-level key in the inline entries array.
-func (e *Event) inlineGet(key string) (interface{}, bool) {
-	for i := 0; i < e.nFields; i++ {
-		if e.entries[i].key == key {
-			return e.entries[i].value, true
-		}
-	}
-	if e.overflow != nil {
-		v, ok := e.overflow[key]
-		return v, ok
-	}
-	return nil, false
-}
-
-// inlineSet sets a top-level key in the inline entries array.
-// Returns the old value if the key already existed.
-func (e *Event) inlineSet(key string, value interface{}) (interface{}, bool) {
-	for i := 0; i < e.nFields; i++ {
-		if e.entries[i].key == key {
-			old := e.entries[i].value
-			e.entries[i].value = value
-			return old, true
-		}
-	}
-	if e.overflow != nil {
-		if old, ok := e.overflow[key]; ok {
-			e.overflow[key] = value
-			return old, true
-		}
-	}
-	// New key.
-	if e.nFields < maxInlineFields {
-		e.entries[e.nFields] = fieldEntry{key: key, value: value}
-		e.nFields++
-	} else {
-		if e.overflow == nil {
-			e.overflow = make(mapstr.M, 4)
-		}
-		e.overflow[key] = value
-	}
-	return nil, false
-}
-
-// inlineDelete removes a top-level key from the inline entries array.
-func (e *Event) inlineDelete(key string) bool {
-	for i := 0; i < e.nFields; i++ {
-		if e.entries[i].key == key {
-			// Shift remaining entries down.
-			copy(e.entries[i:], e.entries[i+1:e.nFields])
-			e.nFields--
-			e.entries[e.nFields] = fieldEntry{} // clear last slot
-			return true
-		}
-	}
-	if e.overflow != nil {
-		if _, ok := e.overflow[key]; ok {
-			delete(e.overflow, key)
-			return true
-		}
-	}
-	return false
-}
-
-// Fields returns the event's fields as a mapstr.M.
-// This renders the internal inline entries into a map, unwrapping
-// any cowMap values. The returned map is safe for read-only use
-// (e.g., encoding). Callers that need a mutable copy should use
-// GetValue/PutValue methods or call Clone().
+// Fields returns the event's fields as a mapstr.M, unwrapping
+// any cowMap values. Safe for read-only use (e.g., encoding).
 func (e *Event) Fields() mapstr.M {
-	e.Materialize()
-	return e.fields
+	return e.fields.ToMapStr()
 }
 
 // SetFields sets the event's fields from a mapstr.M.
-// Used during event creation to initialize fields.
 func (e *Event) SetFields(m mapstr.M) {
-	e.fields = m
-	// Also populate inline entries from the map.
+	e.fields.Clear()
 	for k, v := range m {
-		e.inlineSet(k, v)
+		e.fields.SetTop(k, v)
 	}
 }
 
@@ -181,14 +92,7 @@ func NewEvent() *Event {
 // ReleaseEvent returns an Event to the pool for reuse.
 // The Event must not be referenced after this call.
 func ReleaseEvent(e *Event) {
-	// Clear inline entries to release references for GC.
-	for i := 0; i < e.nFields; i++ {
-		e.entries[i] = fieldEntry{}
-	}
-	e.nFields = 0
-	e.hasCow = false
-	e.overflow = nil
-	e.fields = nil
+	e.fields.Clear()
 	e.Timestamp = time.Time{}
 	e.Meta = nil
 	e.Private = nil
@@ -231,31 +135,7 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return e.Meta.GetValue(subKey)
 	}
 
-	if e.fields == nil {
-		return nil, mapstr.ErrKeyNotFound
-	}
-
-	if _, subKey, cm := e.cowField(key); cm != nil {
-		if subKey == "" {
-			// Return a clone so callers can't corrupt shared data.
-			return cm.shared.Clone(), nil
-		}
-		v, err := cm.shared.GetValue(subKey)
-		if err != nil {
-			return v, err
-		}
-		// Clone map values to prevent shared data corruption.
-		switch m := v.(type) {
-		case mapstr.M:
-			return m.Clone(), nil
-		case map[string]interface{}:
-			return mapstr.M(m).Clone(), nil
-		default:
-			return v, nil
-		}
-	}
-
-	return e.fields.GetValue(key)
+	return e.fields.Get(key)
 }
 
 // Clone creates an exact copy of the event
@@ -266,8 +146,7 @@ func (e *Event) Clone() *Event {
 		Private:    e.Private,
 		TimeSeries: e.TimeSeries,
 	}
-	c.fields = e.cloneFields()
-	c.hasCow = e.hasCow
+	c.fields = e.fields.Clone()
 	return c
 }
 

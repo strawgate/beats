@@ -43,14 +43,14 @@ func TestAddFieldsBehavior(t *testing.T) {
 
 			event := &beat.Event{
 				Timestamp: time.Now(),
-				Fields: mapstr.M{
-					"message": "hello",
-					"elastic_agent": mapstr.M{
-						"id":   "old-id",
-						"name": "old-name",
-					},
-				},
 			}
+			event.SetFields(mapstr.M{
+				"message": "hello",
+				"elastic_agent": mapstr.M{
+					"id":   "old-id",
+					"name": "old-name",
+				},
+			})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -77,11 +77,10 @@ func TestAddFieldsBehavior(t *testing.T) {
 				"agent": mapstr.M{"id": "new-id"},
 			}, false, true)
 
-			event := &beat.Event{
-				Fields: mapstr.M{
-					"agent": mapstr.M{"id": "old-id", "type": "filebeat"},
-				},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{
+				"agent": mapstr.M{"id": "old-id", "type": "filebeat"},
+			})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -104,11 +103,10 @@ func TestAddFieldsBehavior(t *testing.T) {
 				},
 			}, true, false)
 
-			event := &beat.Event{
-				Fields: mapstr.M{
-					"agent": mapstr.M{"id": "existing-id"},
-				},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{
+				"agent": mapstr.M{"id": "existing-id"},
+			})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -130,7 +128,7 @@ func TestAddFieldsBehavior(t *testing.T) {
 				"new_field": "value",
 			}, false, true)
 
-			event := &beat.Event{Fields: nil}
+			event := &beat.Event{}
 			result, err := p.Run(event)
 			require.NoError(t, err)
 			require.NotNil(t, result)
@@ -153,13 +151,12 @@ func TestAddFieldsBehavior(t *testing.T) {
 		t.Run("empty fields", func(t *testing.T) {
 			p := NewAddFields(mapstr.M{}, false, true)
 
-			event := &beat.Event{
-				Fields: mapstr.M{"keep": "this"},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{"keep": "this"})
 			result, err := p.Run(event)
 			require.NoError(t, err)
 			require.NotNil(t, result)
-			assert.Equal(t, mapstr.M{"keep": "this"}, result.Fields)
+			assert.Equal(t, mapstr.M{"keep": "this"}, result.Fields())
 		})
 	})
 
@@ -172,16 +169,15 @@ func TestAddFieldsBehavior(t *testing.T) {
 				},
 			}, true, true)
 
-			event := &beat.Event{
-				Fields: mapstr.M{"message": "hello"},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 
 			// Fields should be untouched
-			assert.Equal(t, mapstr.M{"message": "hello"}, result.Fields)
+			assert.Equal(t, mapstr.M{"message": "hello"}, result.Fields())
 
 			// Meta should have the injected values
 			v, err := result.GetValue("@metadata.input_id")
@@ -205,8 +201,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 					"_id":       "doc-123",
 					"stream_id": "old-stream",
 				},
-				Fields: mapstr.M{"message": "hello"},
 			}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -234,8 +230,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 				Meta: mapstr.M{
 					"stream_id": "existing-stream",
 				},
-				Fields: mapstr.M{"message": "hello"},
 			}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -257,9 +253,9 @@ func TestAddFieldsBehavior(t *testing.T) {
 			}, true, true)
 
 			event := &beat.Event{
-				Meta:   nil,
-				Fields: mapstr.M{"message": "hello"},
+				Meta: nil,
 			}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -278,9 +274,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 				"event":     mapstr.M{"dataset": "system.syslog"},
 			}, true, true)
 
-			event := &beat.Event{
-				Fields: mapstr.M{"message": "hello"},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -315,8 +310,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 
 			event := &beat.Event{
 				Timestamp: now,
-				Fields:    mapstr.M{"message": "hello"},
 			}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -341,8 +336,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 
 			event := &beat.Event{
 				Timestamp: now,
-				Fields:    mapstr.M{"message": "hello"},
 			}
+			event.SetFields(mapstr.M{"message": "hello"})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -364,8 +359,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 
 			event := &beat.Event{
 				Timestamp: now,
-				Fields:    mapstr.M{},
 			}
+			event.SetFields(mapstr.M{})
 
 			result, err := p.Run(event)
 			require.NoError(t, err)
@@ -390,14 +385,13 @@ func TestAddFieldsBehavior(t *testing.T) {
 
 		// Run the processor multiple times
 		for i := 0; i < 10; i++ {
-			event := &beat.Event{
-				Fields: mapstr.M{"message": "hello"},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{"message": "hello"})
 			result, err := p.Run(event)
 			require.NoError(t, err)
 
 			// Mutate the result event's fields
-			_, _ = result.Fields.Put("agent.id", "mutated-by-downstream")
+			_, _ = result.Fields().Put("agent.id", "mutated-by-downstream")
 		}
 
 		// The original processor fields should be unchanged
@@ -413,9 +407,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 		p := NewAddFields(original, true, true)
 
 		for i := 0; i < 10; i++ {
-			event := &beat.Event{
-				Fields: mapstr.M{"message": "hello"},
-			}
+			event := &beat.Event{}
+			event.SetFields(mapstr.M{"message": "hello"})
 			result, err := p.Run(event)
 			require.NoError(t, err)
 
@@ -442,7 +435,8 @@ func TestAddFieldsBehavior(t *testing.T) {
 		fieldsCopy := fields.Clone()
 
 		p := NewAddFields(fields, false, true)
-		event := &beat.Event{Fields: mapstr.M{}}
+		event := &beat.Event{}
+		event.SetFields(mapstr.M{})
 		_, err := p.Run(event)
 		require.NoError(t, err)
 
@@ -490,12 +484,12 @@ func TestAddFieldsBehavior(t *testing.T) {
 
 		event := &beat.Event{
 			Timestamp: time.Now(),
-			Fields: mapstr.M{
-				"message": "test log message",
-				"host":    mapstr.M{"name": "testhost"},
-				"agent":   mapstr.M{"type": "filebeat"},
-			},
 		}
+		event.SetFields(mapstr.M{
+			"message": "test log message",
+			"host":    mapstr.M{"name": "testhost"},
+			"agent":   mapstr.M{"type": "filebeat"},
+		})
 
 		var err error
 		for _, p := range processors {
