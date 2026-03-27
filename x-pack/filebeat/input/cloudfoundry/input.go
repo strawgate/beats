@@ -52,8 +52,9 @@ func configure(cfg *conf.C) (stateless.Input, error) {
 }
 
 func createEvent(evt cloudfoundryEvent) beat.Event {
-	return beat.Event{
+	e := beat.Event{
 		Timestamp: evt.Timestamp(),
-		Fields:    evt.ToFields(),
 	}
+	e.SetFields(evt.ToFields())
+	return e
 }

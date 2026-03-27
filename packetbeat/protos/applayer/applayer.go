@@ -235,10 +235,9 @@ func (t *Transaction) Event(event *beat.Event) error {
 	pbf.Network.Protocol = pbf.Event.Dataset
 	pbf.Error.Message = t.Notes
 
-	fields := event.Fields
-	fields[pb.FieldsKey] = pbf
-	fields["type"] = pbf.Event.Dataset
-	fields["status"] = t.Status
+	event.PutValueQuiet(pb.FieldsKey, pbf)
+	event.PutValueQuiet("type", pbf.Event.Dataset)
+	event.PutValueQuiet("status", t.Status)
 	return nil
 }
 

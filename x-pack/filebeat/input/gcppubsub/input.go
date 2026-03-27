@@ -305,19 +305,19 @@ func makeEvent(topicID string, msg *pubsub.Message) beat.Event {
 
 	event := beat.Event{
 		Timestamp: msg.PublishTime.UTC(),
-		Fields: mapstr.M{
-			"event": mapstr.M{
-				"id":      id,
-				"created": time.Now().UTC(),
-			},
-			"message": string(msg.Data),
-		},
-		Private: msg,
+		Private:   msg,
 	}
+	event.SetFields(mapstr.M{
+		"event": mapstr.M{
+			"id":      id,
+			"created": time.Now().UTC(),
+		},
+		"message": string(msg.Data),
+	})
 	event.SetID(id)
 
 	if len(msg.Attributes) > 0 {
-		event.Fields["labels"] = msg.Attributes
+		_ = event.PutValueQuiet("labels", msg.Attributes)
 	}
 
 	return event

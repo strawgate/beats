@@ -747,9 +747,9 @@ func (p *oktaInput) publishMarker(ts, eventTime time.Time, inputID string, start
 
 	event := beat.Event{
 		Timestamp: ts,
-		Fields:    fields,
 		Private:   tracker,
 	}
+	event.SetFields(fields)
 	tracker.Add()
 	if start {
 		p.logger.Debug("Publishing start write marker")
@@ -782,9 +782,9 @@ func (p *oktaInput) publishUser(u *User, state *stateStore, inputID string, clie
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    userDoc,
 		Private:   tracker,
 	}
+	event.SetFields(userDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing user %q", u.ID)
@@ -811,9 +811,9 @@ func (p *oktaInput) publishDevice(d *Device, state *stateStore, inputID string, 
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    devDoc,
 		Private:   tracker,
 	}
+	event.SetFields(devDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing device %q", d.ID)

@@ -669,10 +669,11 @@ func (i input) run(env v2.Context, src *source, cursor map[string]interface{}, p
 					isDegraded = true
 					break loop
 				}
-				err = pub.Publish(beat.Event{
+				evt := beat.Event{
 					Timestamp: time.Now(),
-					Fields:    event,
-				}, pubCursor)
+				}
+				evt.SetFields(event)
+				err = pub.Publish(evt, pubCursor)
 				if err != nil {
 					hadPublicationError = true
 					pubLog.Errorw("error publishing event", "error", err)

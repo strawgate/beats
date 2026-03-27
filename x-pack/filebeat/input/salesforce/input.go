@@ -567,13 +567,13 @@ func newClient(cfg config, log *logp.Logger) (*http.Client, error) {
 func publishEvent(pub inputcursor.Publisher, cursor *state, jsonStrEvent []byte, dataCollectionMethod string) error {
 	event := beat.Event{
 		Timestamp: timeNow(),
-		Fields: mapstr.M{
-			"message": string(jsonStrEvent),
-			"event": mapstr.M{
-				"provider": dataCollectionMethod,
-			},
-		},
 	}
+	event.SetFields(mapstr.M{
+		"message": string(jsonStrEvent),
+		"event": mapstr.M{
+			"provider": dataCollectionMethod,
+		},
+	})
 
 	return pub.Publish(event, cursor)
 }

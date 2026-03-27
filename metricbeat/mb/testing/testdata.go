@@ -206,7 +206,7 @@ func TestMetricsetFieldsDocumented(t *testing.T, metricSet mb.MetricSet, events 
 	var data []mapstr.M
 	for _, e := range events {
 		beatEvent := StandardizeEvent(metricSet, e, mb.AddMetricSetInfo)
-		data = append(data, beatEvent.Fields)
+		data = append(data, beatEvent.Fields())
 	}
 
 	if err := checkDocumented(data, nil); err != nil {
@@ -271,7 +271,7 @@ func runTest(t *testing.T, file string, module, metricSetName string, config Dat
 		beatEvent := StandardizeEvent(metricSet, e, mb.AddMetricSetInfo)
 		// Overwrite service.address as the port changes every time
 		beatEvent.PutValue("service.address", "127.0.0.1:55555")
-		data = append(data, beatEvent.Fields)
+		data = append(data, beatEvent.Fields())
 	}
 
 	// Sorting the events is necessary as events are not necessarily sent in the same order

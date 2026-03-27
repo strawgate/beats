@@ -370,7 +370,7 @@ func (dns *dnsPlugin) publishTransaction(t *dnsTransaction) {
 	pbf.Network.Protocol = "dns"
 	pbf.Error.Message = t.notes
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = "dns"
 	fields["status"] = common.ERROR_STATUS
 

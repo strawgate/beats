@@ -249,7 +249,7 @@ func makeFieldsHashPartitioner(log *logp.Logger, fields []string, dropFail bool)
 
 			var err error
 			for _, field := range fields {
-				err = hashFieldValue(hasher, msg.data.Content.Fields, field)
+				err = hashFieldValue(hasher, msg.data.Content.Fields(), field)
 				if err != nil {
 					break
 				}

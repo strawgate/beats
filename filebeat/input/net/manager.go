@@ -221,16 +221,16 @@ func (w wrapper) publishLoop(ctx v2.Context, id int, client beat.Client, metrics
 			start := time.Now()
 			evt := beat.Event{
 				Timestamp: d.Timestamp,
-				Fields: mapstr.M{
-					"message": string(d.Data),
-				},
 			}
+			evt.SetFields(mapstr.M{
+				"message": string(d.Data),
+			})
 			if d.Metadata.RemoteAddr != nil {
-				evt.Fields["log"] = mapstr.M{
+				evt.PutValueQuiet("log", mapstr.M{
 					"source": mapstr.M{
 						"address": d.Metadata.RemoteAddr.String(),
 					},
-				}
+				})
 			}
 
 			client.Publish(evt)

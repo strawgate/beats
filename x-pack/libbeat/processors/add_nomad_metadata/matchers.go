@@ -162,9 +162,9 @@ func NewFieldFormatMatcher(cfg conf.C, logger *logp.Logger) (Matcher, error) {
 // MetadataIndex returns the content of the dynamic field defined by the FieldFormatMatcher, usually,
 // but not limited to, a concatenation of multiple fields
 func (f *FieldFormatMatcher) MetadataIndex(event mapstr.M) string {
-	bytes, err := f.Codec.Encode("", &beat.Event{
-		Fields: event,
-	})
+	e := &beat.Event{}
+	e.SetFields(event)
+	bytes, err := f.Codec.Encode("", e)
 
 	if err != nil {
 		f.logger.Named("nomand").Debugf("Unable to apply field format pattern on event")

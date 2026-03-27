@@ -130,8 +130,8 @@ func (j *job) do(ctx context.Context, id string) {
 		}
 		event := beat.Event{
 			Timestamp: time.Now(),
-			Fields:    fields,
 		}
+		event.SetFields(fields)
 		event.SetID(objectID(j.hash, 0))
 		// locks while data is being saved to avoid concurrent map read/writes
 		cp, done := j.state.saveForTx(*j.blob.Name, *j.blob.Properties.LastModified)
@@ -427,30 +427,30 @@ func evaluateJSON(reader *bufio.Reader) (io.Reader, bool, error) {
 func (j *job) createEvent(message string, offset int64) beat.Event {
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"message": message,
-			"log": mapstr.M{
-				"offset": offset,
-				"file": mapstr.M{
-					"path": j.blobURL,
-				},
-			},
-			"azure": mapstr.M{
-				"storage": mapstr.M{
-					"container": mapstr.M{
-						"name": j.src.ContainerName,
-					},
-					"blob": mapstr.M{
-						"name":         *j.blob.Name,
-						"content_type": *j.blob.Properties.ContentType,
-					},
-				},
-			},
-			"cloud": mapstr.M{
-				"provider": "azure",
+	}
+	event.SetFields(mapstr.M{
+		"message": message,
+		"log": mapstr.M{
+			"offset": offset,
+			"file": mapstr.M{
+				"path": j.blobURL,
 			},
 		},
-	}
+		"azure": mapstr.M{
+			"storage": mapstr.M{
+				"container": mapstr.M{
+					"name": j.src.ContainerName,
+				},
+				"blob": mapstr.M{
+					"name":         *j.blob.Name,
+					"content_type": *j.blob.Properties.ContentType,
+				},
+			},
+		},
+		"cloud": mapstr.M{
+			"provider": "azure",
+		},
+	})
 	event.SetID(objectID(j.hash, offset))
 	j.metrics.absEventsCreatedTotal.Inc()
 	return event

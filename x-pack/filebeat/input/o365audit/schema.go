@@ -39,18 +39,19 @@ func (e apiError) String() string {
 // toBeatEvent returns a beat.Event representing the API error.
 func (e apiError) toBeatEvent() beat.Event {
 	code, msg := e.getErrorStrings()
-	return beat.Event{
+	ev := beat.Event{
 		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"error": mapstr.M{
-				"code":    code,
-				"message": msg,
-			},
-			"event": mapstr.M{
-				"kind": "pipeline_error",
-			},
-		},
 	}
+	ev.SetFields(mapstr.M{
+		"error": mapstr.M{
+			"code":    code,
+			"message": msg,
+		},
+		"event": mapstr.M{
+			"kind": "pipeline_error",
+		},
+	})
+	return ev
 }
 
 type content struct {

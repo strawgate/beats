@@ -129,8 +129,8 @@ func (inp *o365input) Run(ctx v2.Context, src cursor.Source, cursor cursor.Curso
 			msg.Put("event.kind", "pipeline_error")
 			event := beat.Event{
 				Timestamp: time.Now(),
-				Fields:    msg,
 			}
+			event.SetFields(msg)
 			if err := pub.Publish(event, nil); err != nil {
 				ctx.UpdateStatus(status.Degraded, "failed to publish error: "+err.Error())
 				ctx.Logger.Errorf("publisher.Publish failed: %v", err)
@@ -276,10 +276,10 @@ func (env apiEnvironment) toBeatEvent(raw json.RawMessage, doc mapstr.M) beat.Ev
 	}
 	b := beat.Event{
 		Timestamp: ts,
-		Fields: mapstr.M{
-			fieldsPrefix: doc,
-		},
 	}
+	b.SetFields(mapstr.M{
+		fieldsPrefix: doc,
+	})
 	if env.config.SetIDFromAuditRecord {
 		if id, err := getString(doc, "Id"); err == nil && len(id) > 0 {
 			b.SetID(id)

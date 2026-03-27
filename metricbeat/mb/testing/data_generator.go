@@ -176,10 +176,10 @@ func WriteEventToDataJSON(t testing.TB, fullEvent beat.Event, postfixPath string
 		p = postfixPath
 	}
 
-	fields := fullEvent.Fields
+	fields := fullEvent.Fields()
 	fields["@timestamp"] = fullEvent.Timestamp
 
-	output, err := json.MarshalIndent(&fullEvent.Fields, "", "    ")
+	output, err := json.MarshalIndent(fields, "", "    ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +208,8 @@ func SelectEventV2(f mb.MetricSet, events []mb.Event, cond func(e mapstr.M) bool
 		return events[0], nil
 	}
 	for _, e := range events {
-		fields := StandardizeEvent(f, e, mb.AddMetricSetInfo).Fields
+		stdEvent := StandardizeEvent(f, e, mb.AddMetricSetInfo)
+		fields := stdEvent.Fields()
 		if cond(fields) {
 			return e, nil
 		}

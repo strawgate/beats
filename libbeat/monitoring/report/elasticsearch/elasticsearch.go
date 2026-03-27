@@ -299,11 +299,12 @@ func (r *reporter) snapshotLoop(registry *monitoring.Registry, namespace, prefix
 			_, _ = meta.Put("cluster_uuid", clusterUUID)
 		}
 
-		r.client.Publish(beat.Event{
+		evt := beat.Event{
 			Timestamp: ts,
-			Fields:    fields,
 			Meta:      meta,
-		})
+		}
+		evt.SetFields(fields)
+		r.client.Publish(evt)
 	}
 }
 

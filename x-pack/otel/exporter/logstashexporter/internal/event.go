@@ -33,11 +33,12 @@ func parseEvent(ctx context.Context, logRecord *plog.LogRecord) (beat.Event, err
 		timestamp = logRecord.ObservedTimestamp().AsTime()
 	}
 
-	return beat.Event{
+	ev := beat.Event{
 		Timestamp: timestamp,
 		Meta:      metadata,
-		Fields:    fields,
-	}, nil
+	}
+	ev.SetFields(fields)
+	return ev, nil
 }
 
 func parseEventFields(logRecord *plog.LogRecord) (map[string]any, bool) {

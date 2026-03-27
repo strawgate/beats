@@ -224,7 +224,9 @@ func (c *client) makePublishPUBLISH(conn redis.Conn) (publishFn, error) {
 
 func (c *client) publishEventsBulk(conn redis.Conn, command string) publishFn {
 	// XXX: requires key.IsConst() == true
-	dest, _ := c.key.Select(&beat.Event{Fields: mapstr.M{}})
+	emptyEvent := &beat.Event{}
+	emptyEvent.SetFields(mapstr.M{})
+	dest, _ := c.key.Select(emptyEvent)
 	return func(_ outil.Selector, data []publisher.Event) ([]publisher.Event, error) {
 		args := make([]interface{}, 1, len(data)+1)
 		args[0] = dest

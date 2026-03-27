@@ -206,9 +206,8 @@ func (mc *memcache) finishTransaction(t *transaction) error {
 }
 
 func (mc *memcache) onTransaction(t *transaction) {
-	event := beat.Event{
-		Fields: mapstr.M{},
-	}
+	event := beat.Event{}
+	event.SetFields(mapstr.M{})
 	t.Event(&event)
 	debug("publish event: %s", event)
 	mc.results(event)
@@ -396,7 +395,7 @@ func (t *transaction) Event(event *beat.Event) error {
 	}
 
 	mc := mapstr.M{}
-	event.Fields["memcache"] = mc
+	event.PutValueQuiet("memcache", mc)
 
 	msg := t.request
 	if msg == nil {
@@ -409,7 +408,7 @@ func (t *transaction) Event(event *beat.Event) error {
 			logp.Warn("error filling transaction request: %v", err)
 			return err
 		}
-		event.Fields["event.action"] = "memcache." + strings.ToLower(t.request.command.typ.String())
+		event.PutValueQuiet("event.action", "memcache."+strings.ToLower(t.request.command.typ.String()))
 	}
 	if t.response != nil {
 		_, err := t.response.SubEvent("response", mc)
@@ -419,7 +418,7 @@ func (t *transaction) Event(event *beat.Event) error {
 		}
 		normalized := normalizeEventOutcome(memcacheStatusCode(t.response.status).String())
 		if normalized != "" {
-			event.Fields["event.outcome"] = normalized
+			event.PutValueQuiet("event.outcome", normalized)
 		}
 	}
 

@@ -122,13 +122,14 @@ func createOnMessageHandler(logger *logp.Logger, outlet channel.Outleter, inflig
 			"retained":   message.Retained(),
 			"topic":      message.Topic(),
 		}
-		outlet.OnEvent(beat.Event{
+		evt := beat.Event{
 			Timestamp: time.Now(),
-			Fields: mapstr.M{
-				"message": string(message.Payload()),
-				"mqtt":    mqttFields,
-			},
+		}
+		evt.SetFields(mapstr.M{
+			"message": string(message.Payload()),
+			"mqtt":    mqttFields,
 		})
+		outlet.OnEvent(evt)
 
 		inflightMessages.Done()
 	}

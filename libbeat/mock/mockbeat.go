@@ -60,13 +60,14 @@ func (mb *Mockbeat) Run(b *beat.Beat) error {
 		for {
 			select {
 			case <-ticker.C:
-				client.Publish(beat.Event{
+				evt := beat.Event{
 					Timestamp: time.Now(),
-					Fields: mapstr.M{
-						"type":    "mock",
-						"message": "Mockbeat is alive!",
-					},
+				}
+				evt.SetFields(mapstr.M{
+					"type":    "mock",
+					"message": "Mockbeat is alive!",
 				})
+				client.Publish(evt)
 			case <-mb.done:
 				ticker.Stop()
 				return

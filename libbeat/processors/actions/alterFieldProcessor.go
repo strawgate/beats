@@ -129,11 +129,11 @@ func (a *alterFieldProcessor) alterField(event *beat.Event, field string) error 
 	// modify all segments of the key
 	var err error
 	if a.AlterFullField {
-		err = event.Fields.AlterPath(field, mapstr.CaseInsensitiveMode, a.alterFunc)
+		err = event.Fields().AlterPath(field, mapstr.CaseInsensitiveMode, a.alterFunc)
 	} else {
 		// modify only the last segment
 		segmentCount := strings.Count(field, ".")
-		err = event.Fields.AlterPath(field, mapstr.CaseInsensitiveMode, func(key string) (string, error) {
+		err = event.Fields().AlterPath(field, mapstr.CaseInsensitiveMode, func(key string) (string, error) {
 			if segmentCount > 0 {
 				segmentCount--
 				return key, nil

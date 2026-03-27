@@ -141,7 +141,7 @@ func New(c *conf.C, log *logp.Logger) (beat.Processor, error) {
 func (p *processor) Run(event *beat.Event) (*beat.Event, error) {
 	if err := p.run(event); err != nil && !p.IgnoreFailure {
 		err = fmt.Errorf(procName+" failed to process field %q: %w", p.Field, err)
-		appendStringField(event.Fields, "error.message", err.Error())
+		appendStringField(event.Fields(), "error.message", err.Error())
 		return event, err
 	}
 

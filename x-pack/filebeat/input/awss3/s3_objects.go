@@ -421,30 +421,30 @@ func (p *s3ObjectProcessor) readFile(r io.Reader, logger *logp.Logger) error {
 func (p *s3ObjectProcessor) createEvent(message string, offset int64) beat.Event {
 	event := beat.Event{
 		Timestamp: time.Now().UTC(),
-		Fields: mapstr.M{
-			"message": message,
-			"log": mapstr.M{
-				"file": mapstr.M{
-					"path": p.s3RequestURL,
-				},
-			},
-			"aws": mapstr.M{
-				"s3": mapstr.M{
-					"bucket": mapstr.M{
-						"name": p.s3Obj.S3.Bucket.Name,
-						"arn":  p.s3Obj.S3.Bucket.ARN,
-					},
-					"object": mapstr.M{
-						"key": p.s3Obj.S3.Object.Key,
-					},
-				},
-			},
-			"cloud": mapstr.M{
-				"provider": p.s3Obj.Provider,
-				"region":   p.s3Obj.AWSRegion,
+	}
+	event.SetFields(mapstr.M{
+		"message": message,
+		"log": mapstr.M{
+			"file": mapstr.M{
+				"path": p.s3RequestURL,
 			},
 		},
-	}
+		"aws": mapstr.M{
+			"s3": mapstr.M{
+				"bucket": mapstr.M{
+					"name": p.s3Obj.S3.Bucket.Name,
+					"arn":  p.s3Obj.S3.Bucket.ARN,
+				},
+				"object": mapstr.M{
+					"key": p.s3Obj.S3.Object.Key,
+				},
+			},
+		},
+		"cloud": mapstr.M{
+			"provider": p.s3Obj.Provider,
+			"region":   p.s3Obj.AWSRegion,
+		},
+	})
 	if offset >= 0 {
 		event.PutValue("log.offset", offset)
 		event.SetID(objectID(p.s3Obj.S3.Object.LastModified, p.s3ObjHash, offset))

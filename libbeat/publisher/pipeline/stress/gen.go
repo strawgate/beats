@@ -146,14 +146,14 @@ func generate(
 	for cs.Active() {
 		event := beat.Event{
 			Timestamp: time.Now(),
-			Fields: mapstr.M{
-				"id":    id,
-				"hello": "world",
-				"count": count.Load(),
-
-				// TODO: more custom event generation?
-			},
 		}
+		event.SetFields(mapstr.M{
+			"id":    id,
+			"hello": "world",
+			"count": count.Load(),
+
+			// TODO: more custom event generation?
+		})
 
 		client.Publish(event)
 

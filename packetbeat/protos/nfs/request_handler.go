@@ -47,7 +47,7 @@ var unmatchedRequests = monitoring.NewInt(nil, "nfs.unmatched_requests")
 
 // called by Cache, when re reply seen within expected time window
 func (r *rpc) handleExpiredPacket(nfs *nfs) {
-	nfs.event.Fields["status"] = "NO_REPLY"
+	nfs.event.PutValueQuiet("status", "NO_REPLY")
 	r.results(nfs.event)
 	unmatchedRequests.Add(1)
 }
@@ -114,7 +114,7 @@ func (r *rpc) handleCall(xid string, xdr *xdr, ts time.Time, tcptuple *common.TC
 		"xid": xid,
 	}
 
-	fields := evt.Fields
+	fields := evt.Fields()
 
 	authFlavor, err := xdr.getUInt()
 	if dropMalformed("rpc auth flavor", err) {
@@ -249,7 +249,7 @@ func (r *rpc) handleReply(xid string, xdr *xdr, ts time.Time, tcptuple *common.T
 		nfs.pbf.Event.End = ts
 		nfs.pbf.Destination.Bytes = int64(xdr.size())
 
-		fields := nfs.event.Fields
+		fields := nfs.event.Fields()
 		rpcInfo, ok := fields["rpc"].(mapstr.M)
 		if !ok {
 			logp.Warn("nfs: failed to assert map[string]")

@@ -188,11 +188,11 @@ func (p *JSONParser) Next() (reader.Message, error) {
 		event := &beat.Event{
 			Timestamp: message.Ts,
 			Meta:      message.Meta,
-			Fields:    message.Fields,
 		}
+		event.SetFields(message.Fields)
 		jsontransform.WriteJSONKeys(event, jsonFields, p.JSONReader.cfg.ExpandKeys, p.JSONReader.cfg.OverwriteKeys, p.JSONReader.cfg.AddErrorKey)
 		message.Ts = event.Timestamp
-		message.Fields = event.Fields
+		message.Fields = event.Fields()
 		message.Meta = event.Meta
 	} else {
 		fields := mapstr.M{}
@@ -246,8 +246,8 @@ func MergeJSONFields(data mapstr.M, jsonFields mapstr.M, text *string, config Co
 		}
 		event := &beat.Event{
 			Timestamp: ts,
-			Fields:    data,
 		}
+		event.SetFields(data)
 		jsontransform.WriteJSONKeys(event, jsonFields, config.ExpandKeys, config.OverwriteKeys, config.AddErrorKey)
 
 		return id, event.Timestamp

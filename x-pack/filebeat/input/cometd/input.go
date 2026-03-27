@@ -232,18 +232,18 @@ type event struct {
 func makeEvent(id string, channel string, body string) beat.Event {
 	e := beat.Event{
 		Timestamp: time.Now().UTC(),
-		Fields: mapstr.M{
-			"event": mapstr.M{
-				"id":      id,
-				"created": time.Now().UTC(),
-			},
-			"message": body,
-			"cometd": mapstr.M{
-				"channel_name": channel,
-			},
-		},
-		Private: body,
+		Private:   body,
 	}
+	e.SetFields(mapstr.M{
+		"event": mapstr.M{
+			"id":      id,
+			"created": time.Now().UTC(),
+		},
+		"message": body,
+		"cometd": mapstr.M{
+			"channel_name": channel,
+		},
+	})
 	e.SetID(id)
 
 	return e

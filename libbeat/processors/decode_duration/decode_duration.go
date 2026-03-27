@@ -46,9 +46,8 @@ type decodeDuration struct {
 }
 
 func (u decodeDuration) Run(event *beat.Event) (*beat.Event, error) {
-	fields := event.Fields
 	fieldName := u.config.Field
-	x, err := fields.GetValue(fieldName)
+	x, err := event.GetValue(fieldName)
 	if err != nil {
 		return event, fmt.Errorf("field '%s' not present on event", fieldName)
 	}
@@ -73,7 +72,7 @@ func (u decodeDuration) Run(event *beat.Event) (*beat.Event, error) {
 	default:
 		x = float64(d.Milliseconds())
 	}
-	if _, err = fields.Put(fieldName, x); err != nil {
+	if _, err = event.PutValue(fieldName, x); err != nil {
 		return event, fmt.Errorf("put field '%s' back to event failed: %w", fieldName, err)
 	}
 	return event, nil

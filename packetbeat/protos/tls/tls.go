@@ -418,7 +418,7 @@ func (plugin *tlsPlugin) createEvent(conn *tlsConnectionData) beat.Event {
 	pbf.Network.Transport = "tcp"
 	pbf.Network.Protocol = "tls"
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Network.Protocol
 	fields["status"] = status
 

@@ -63,9 +63,9 @@ func (e *Event) BeatEvent(module, metricSet string, modifiers ...EventModifier) 
 
 	b := beat.Event{
 		Timestamp:  e.Timestamp,
-		Fields:     e.RootFields,
 		TimeSeries: !e.DisableTimeSeries,
 	}
+	b.SetFields(e.RootFields)
 
 	if len(e.ModuleFields) > 0 {
 		b.PutValue(module, e.ModuleFields)
@@ -102,9 +102,9 @@ func (e *Event) BeatEvent(module, metricSet string, modifiers ...EventModifier) 
 	}
 
 	if e.Error != nil {
-		b.Fields["error"] = mapstr.M{
+		b.PutValueQuiet("error", mapstr.M{
 			"message": e.Error.Error(),
-		}
+		})
 	}
 
 	return b

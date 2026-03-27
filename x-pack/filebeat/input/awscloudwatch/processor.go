@@ -43,30 +43,30 @@ func (p *logProcessor) processLogEvents(logEvents []types.FilteredLogEvent, logG
 func createEvent(logEvent types.FilteredLogEvent, logGroupId string, regionName string) beat.Event {
 	event := beat.Event{
 		Timestamp: time.UnixMilli(*logEvent.Timestamp).UTC(),
-		Fields: mapstr.M{
-			"message": *logEvent.Message,
-			"log": mapstr.M{
-				"file": mapstr.M{
-					"path": logGroupId + "/" + *logEvent.LogStreamName,
-				},
-			},
-			"event": mapstr.M{
-				"id":       *logEvent.EventId,
-				"ingested": time.Now(),
-			},
-			"aws": mapstr.M{
-				"cloudwatch": mapstr.M{
-					"log_group":      logGroupId,
-					"log_stream":     *logEvent.LogStreamName,
-					"ingestion_time": time.UnixMilli(*logEvent.IngestionTime),
-				},
-			},
-			"cloud": mapstr.M{
-				"provider": "aws",
-				"region":   regionName,
+	}
+	event.SetFields(mapstr.M{
+		"message": *logEvent.Message,
+		"log": mapstr.M{
+			"file": mapstr.M{
+				"path": logGroupId + "/" + *logEvent.LogStreamName,
 			},
 		},
-	}
+		"event": mapstr.M{
+			"id":       *logEvent.EventId,
+			"ingested": time.Now(),
+		},
+		"aws": mapstr.M{
+			"cloudwatch": mapstr.M{
+				"log_group":      logGroupId,
+				"log_stream":     *logEvent.LogStreamName,
+				"ingestion_time": time.UnixMilli(*logEvent.IngestionTime),
+			},
+		},
+		"cloud": mapstr.M{
+			"provider": "aws",
+			"region":   regionName,
+		},
+	})
 	event.SetID(*logEvent.EventId)
 
 	return event

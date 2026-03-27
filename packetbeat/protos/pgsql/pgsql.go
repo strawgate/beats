@@ -483,7 +483,7 @@ func (pgsql *pgsqlPlugin) publishTransaction(t *pgsqlTransaction) {
 	pbf.Network.Protocol = pbf.Event.Dataset
 	pbf.Error.Message = t.notes
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 	fields["query"] = t.query
 	fields["method"] = t.method

@@ -515,9 +515,9 @@ func (p *adInput) publishGroup(g *User, inputID string, client beat.Client, trac
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    doc,
 		Private:   tracker,
 	}
+	event.SetFields(doc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing group %q", g.ID)
@@ -541,9 +541,9 @@ func (p *adInput) publishMarker(ts, eventTime time.Time, inputID string, start b
 
 	event := beat.Event{
 		Timestamp: ts,
-		Fields:    fields,
 		Private:   tracker,
 	}
+	event.SetFields(fields)
 	tracker.Add()
 	if start {
 		p.logger.Debug("Publishing start write marker")
@@ -573,9 +573,9 @@ func (p *adInput) publishUser(u *User, state *stateStore, inputID string, client
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    userDoc,
 		Private:   tracker,
 	}
+	event.SetFields(userDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing user %q", u.ID)
@@ -602,9 +602,9 @@ func (p *adInput) publishDevice(u *User, state *stateStore, inputID string, clie
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    userDoc,
 		Private:   tracker,
 	}
+	event.SetFields(userDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing device %q", u.ID)

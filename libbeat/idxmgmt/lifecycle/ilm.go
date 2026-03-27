@@ -92,9 +92,9 @@ func NoopSupport(_ *logp.Logger, info beat.Info, c bool) (Supporter, error) {
 
 // ApplyStaticFmtstr applies the beat info to the given format string
 func ApplyStaticFmtstr(info beat.Info, fmt fmtstr.EventFormatString) (string, error) {
-	return fmt.Run(
-		&beat.Event{
-			Fields:    fmtstr.FieldsForBeat(info.Beat, info.Version),
-			Timestamp: time.Now(),
-		})
+	e := &beat.Event{
+		Timestamp: time.Now(),
+	}
+	e.SetFields(fmtstr.FieldsForBeat(info.Beat, info.Version))
+	return fmt.Run(e)
 }

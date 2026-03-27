@@ -101,9 +101,8 @@ func (t *configuredJob) Stop() {
 }
 
 func runPublishJob(job jobs.Job, pubClient beat.Client) []scheduler.TaskFunc {
-	event := &beat.Event{
-		Fields: mapstr.M{},
-	}
+	event := &beat.Event{}
+	event.SetFields(mapstr.M{})
 
 	conts, err := job(event)
 	if err != nil {
@@ -112,7 +111,7 @@ func runPublishJob(job jobs.Job, pubClient beat.Client) []scheduler.TaskFunc {
 
 	hasContinuations := len(conts) > 0
 
-	if event.Fields != nil && !eventext.IsEventCancelled(event) {
+	if event.Fields() != nil && !eventext.IsEventCancelled(event) {
 		// If continuations are present we defensively publish a clone of the event
 		// in the chance that the event shares underlying data with the events for continuations
 		// This prevents races where the pipeline publish could accidentally alter multiple events.
@@ -120,8 +119,8 @@ func runPublishJob(job jobs.Job, pubClient beat.Client) []scheduler.TaskFunc {
 			clone := beat.Event{
 				Timestamp: event.Timestamp,
 				Meta:      event.Meta.Clone(),
-				Fields:    event.CloneFields(),
 			}
+			clone.SetFields(event.CloneFields())
 			pubClient.Publish(clone)
 		} else {
 			// no clone needed if no continuations

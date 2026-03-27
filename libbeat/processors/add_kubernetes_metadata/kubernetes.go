@@ -340,7 +340,7 @@ func (k *kubernetesAnnotator) Run(event *beat.Event) (*beat.Event, error) {
 		return event, nil
 	}
 
-	index := k.matchers.MetadataIndex(event.Fields)
+	index := k.matchers.MetadataIndex(event.Fields())
 	if index == "" {
 		k.log.Debug("No container match string, not adding kubernetes data")
 		return event, nil

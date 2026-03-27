@@ -545,12 +545,12 @@ func (in *eventHubInputV2) processReceivedEvents(receivedEvents []*azeventhubs.R
 				// this is the default value for the @timestamp field; usually the ingest
 				// pipeline replaces it with a value in the payload.
 				Timestamp: processingStartTime,
-				Fields: mapstr.M{
-					"message": record,
-					"azure":   eventHubMetadata,
-				},
-				Private: receivedEventData,
+				Private:   receivedEventData,
 			}
+			event.SetFields(mapstr.M{
+				"message": record,
+				"azure":   eventHubMetadata,
+			})
 
 			// Publish the event to the Beats pipeline.
 			pipelineClient.Publish(event)

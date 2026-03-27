@@ -96,11 +96,12 @@ func (e Record) ToEvent() beat.Event {
 	winevent.AddOptional(m, "event.action", e.Task)
 	winevent.AddOptional(m, "host.name", e.Computer)
 
-	return beat.Event{
+	evt := beat.Event{
 		Timestamp: e.TimeCreated.SystemTime,
-		Fields:    m,
 		Private:   e.Offset,
 	}
+	evt.SetFields(m)
+	return evt
 }
 
 // rename will rename a map entry overriding any previous value

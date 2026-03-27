@@ -280,10 +280,11 @@ func (p processor) process(ctx context.Context, state, cursor map[string]any, st
 			}
 		}
 		// Publish the event.
-		err = p.pub.Publish(beat.Event{
+		evt := beat.Event{
 			Timestamp: time.Now(),
-			Fields:    event,
-		}, pubCursor)
+		}
+		evt.SetFields(event)
+		err = p.pub.Publish(evt, pubCursor)
 		if err != nil {
 			hadPublicationError = true
 			p.metrics.errorsTotal.Inc()

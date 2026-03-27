@@ -141,16 +141,17 @@ func (cl *ClientLogger) publishLoop(reader chan logdriver.LogEntry) {
 		_ = cl.localLog.Log(constructLogSpoolMsg(entry))
 		line := strings.TrimSpace(string(entry.Line))
 
-		cl.client.Publish(beat.Event{
+		evt := beat.Event{
 			Timestamp: time.Unix(0, entry.TimeNano),
-			Fields: mapstr.M{
-				"message":   line,
-				"container": cl.ContainerECSMeta,
-				"host": mapstr.M{
-					"name": cl.hostname,
-				},
+		}
+		evt.SetFields(mapstr.M{
+			"message":   line,
+			"container": cl.ContainerECSMeta,
+			"host": mapstr.M{
+				"name": cl.hostname,
 			},
 		})
+		cl.client.Publish(evt)
 	}
 }
 

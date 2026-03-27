@@ -492,9 +492,9 @@ func (p *jamfInput) publishMarker(ts, eventTime time.Time, inputID string, start
 
 	event := beat.Event{
 		Timestamp: ts,
-		Fields:    fields,
 		Private:   tracker,
 	}
+	event.SetFields(fields)
 	tracker.Add()
 	if start {
 		p.logger.Debug("Publishing start write marker")
@@ -528,9 +528,9 @@ func (p *jamfInput) publishComputer(c *Computer, inputID string, client beat.Cli
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    devDoc,
 		Private:   tracker,
 	}
+	event.SetFields(devDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing computer %q", id)

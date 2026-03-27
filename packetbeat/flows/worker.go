@@ -521,10 +521,11 @@ func createEvent(watcher *procs.ProcessesWatcher, ts time.Time, f *biFlow, isOve
 	fields["source"] = source
 	fields["destination"] = dest
 
-	return beat.Event{
+	evt := beat.Event{
 		Timestamp: timestamp,
-		Fields:    fields,
 	}
+	evt.SetFields(fields)
+	return evt
 }
 
 // formatHardwareAddr formats hardware addresses according to the ECS spec.

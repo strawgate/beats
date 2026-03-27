@@ -34,7 +34,7 @@ func toBeatEvent(flow record.Record, internalNetworks []string) (event beat.Even
 		e = toBeatEventCommon(flow)
 	}
 
-	normaliseIPFields(e.Fields)
+	normaliseIPFields(e.Fields())
 	return e
 }
 
@@ -97,14 +97,15 @@ func toBeatEventCommon(flow record.Record) beat.Event {
 		ecsDevice["ip"] = extractIPFromIPPort(exporter)
 	}
 
-	return beat.Event{
+	ev := beat.Event{
 		Timestamp: flow.Timestamp,
-		Fields: mapstr.M{
-			"netflow":  fieldNameConverter.ToSnakeCase(flow.Fields),
-			"event":    ecsEvent,
-			"observer": ecsDevice,
-		},
 	}
+	ev.SetFields(mapstr.M{
+		"netflow":  fieldNameConverter.ToSnakeCase(flow.Fields),
+		"event":    ecsEvent,
+		"observer": ecsDevice,
+	})
+	return ev
 }
 
 func extractIPFromIPPort(address string) string {
@@ -136,10 +137,11 @@ func optionsToBeatEvent(flow record.Record) beat.Event {
 func flowToBeatEvent(flow record.Record, internalNetworks []string) beat.Event {
 	event := toBeatEventCommon(flow)
 
-	ecsEvent, ok := event.Fields["event"].(mapstr.M)
+	ecsEventVal, _ := event.GetValue("event")
+	ecsEvent, ok := ecsEventVal.(mapstr.M)
 	if !ok {
 		ecsEvent = mapstr.M{}
-		event.Fields["event"] = ecsEvent
+		_ = event.PutValueQuiet("event", ecsEvent)
 	}
 	sysUptime, hasSysUptime := getKeyUint64(flow.Exporter, "uptimeMillis")
 	if !hasSysUptime || sysUptime == 0 {
@@ -315,8 +317,8 @@ func flowToBeatEvent(flow record.Record, internalNetworks []string) beat.Event {
 		ecsEvent["category"] = []string{"network", "session"}
 
 		// Assume source is the client in biflows.
-		event.Fields["client"] = ecsSource
-		event.Fields["server"] = ecsDest
+		_ = event.PutValueQuiet("client", ecsSource)
+		_ = event.PutValueQuiet("server", ecsDest)
 	}
 
 	ecsNetwork["direction"] = "unknown"
@@ -338,19 +340,19 @@ func flowToBeatEvent(flow record.Record, internalNetworks []string) beat.Event {
 	}
 
 	if len(ecsFlow) > 0 {
-		event.Fields["flow"] = ecsFlow
+		_ = event.PutValueQuiet("flow", ecsFlow)
 	}
 	if len(ecsSource) > 0 {
-		event.Fields["source"] = ecsSource
+		_ = event.PutValueQuiet("source", ecsSource)
 	}
 	if len(ecsDest) > 0 {
-		event.Fields["destination"] = ecsDest
+		_ = event.PutValueQuiet("destination", ecsDest)
 	}
 	if len(ecsNetwork) > 0 {
-		event.Fields["network"] = ecsNetwork
+		_ = event.PutValueQuiet("network", ecsNetwork)
 	}
 	if len(relatedIP) > 0 {
-		event.Fields["related"] = mapstr.M{"ip": uniqueIPs(relatedIP)}
+		_ = event.PutValueQuiet("related", mapstr.M{"ip": uniqueIPs(relatedIP)})
 	}
 	return event
 }

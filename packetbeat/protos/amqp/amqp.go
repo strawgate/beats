@@ -445,7 +445,7 @@ func (amqp *amqpPlugin) publishTransaction(t *amqpTransaction) {
 	pbf.Network.Transport = "tcp"
 	pbf.Error.Message = t.notes
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 	fields["method"] = t.method
 

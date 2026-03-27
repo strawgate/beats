@@ -104,10 +104,10 @@ func (s *server) Run(ctx input.Context, publisher stateless.Publisher) error {
 		log.Debugw("Data received", "bytes", len(data))
 		evt := beat.Event{
 			Timestamp: time.Now(),
-			Fields: mapstr.M{
-				"message": string(data),
-			},
 		}
+		evt.SetFields(mapstr.M{
+			"message": string(data),
+		})
 		publisher.Publish(evt)
 
 		// This must be called after publisher.Publish to measure

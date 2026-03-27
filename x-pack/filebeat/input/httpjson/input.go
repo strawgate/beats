@@ -518,8 +518,9 @@ func makeEvent(body mapstr.M) (beat.Event, error) {
 		"message": string(bodyBytes),
 	}
 
-	return beat.Event{
+	ev := beat.Event{
 		Timestamp: now,
-		Fields:    fields,
-	}, nil
+	}
+	ev.SetFields(fields)
+	return ev, nil
 }

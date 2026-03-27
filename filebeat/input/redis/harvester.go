@@ -213,18 +213,19 @@ func (h *Harvester) Run() error {
 			slowlogEntry["args"] = log.args
 		}
 
-		err = h.forwarder.Send(beat.Event{
+		evt := beat.Event{
 			Timestamp: time.Unix(log.timestamp, 0).UTC(),
-			Fields: mapstr.M{
-				"message": strings.Join(args, " "),
-				"redis": mapstr.M{
-					"slowlog": slowlogEntry,
-				},
-				"event": mapstr.M{
-					"created": time.Now(),
-				},
+		}
+		evt.SetFields(mapstr.M{
+			"message": strings.Join(args, " "),
+			"redis": mapstr.M{
+				"slowlog": slowlogEntry,
 			},
-		}, h.logger)
+			"event": mapstr.M{
+				"created": time.Now(),
+			},
+		})
+		err = h.forwarder.Send(evt, h.logger)
 		if err != nil {
 			h.logger.Errorf("Error sending beat event: %s", err)
 			continue

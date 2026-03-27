@@ -16,6 +16,7 @@ import (
 	"github.com/elastic/beats/v7/libbeat/beat"
 	"github.com/elastic/beats/v7/libbeat/management/status"
 	"github.com/elastic/elastic-agent-libs/logp"
+	"github.com/elastic/elastic-agent-libs/mapstr"
 	"github.com/elastic/elastic-agent-libs/monitoring"
 	"github.com/elastic/elastic-agent-libs/transport/tlscommon"
 	"github.com/elastic/go-lumber/lj"
@@ -121,21 +122,21 @@ func (s *server) processBatch(batch *lj.Batch) {
 func makeEvent(remoteAddr string, tlsState *tls.ConnectionState, lumberjackEvent interface{}, acker *batchACKTracker) beat.Event {
 	event := beat.Event{
 		Timestamp: time.Now().UTC(),
-		Fields: map[string]interface{}{
-			"source": map[string]interface{}{
-				"address": remoteAddr,
-			},
-			"lumberjack": lumberjackEvent,
-		},
-		Private: acker,
+		Private:   acker,
 	}
+	event.SetFields(mapstr.M{
+		"source": map[string]interface{}{
+			"address": remoteAddr,
+		},
+		"lumberjack": lumberjackEvent,
+	})
 
 	if tlsState != nil && len(tlsState.PeerCertificates) > 0 {
-		event.Fields["tls"] = map[string]interface{}{
+		_ = event.PutValueQuiet("tls", map[string]interface{}{
 			"client": map[string]interface{}{
 				"subject": tlsState.PeerCertificates[0].Subject.CommonName,
 			},
-		}
+		})
 	}
 
 	return event

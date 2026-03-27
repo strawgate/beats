@@ -264,21 +264,21 @@ func (in *eventHubInputV1) processEvents(event *eventhub.Event) {
 		_, _ = eventHubMetadata.Put("sequence_number", event.SystemProperties.SequenceNumber)
 		_, _ = eventHubMetadata.Put("enqueued_time", event.SystemProperties.EnqueuedTime)
 
-		event := beat.Event{
+		evt := beat.Event{
 			// We set the timestamp to the processing
 			// start time as default value.
 			//
 			// Usually, the ingest pipeline replaces it
 			// with a value in the payload.
 			Timestamp: processingStartTime,
-			Fields: mapstr.M{
-				"message": record,
-				"azure":   eventHubMetadata,
-			},
-			Private: event.Data,
+			Private:   event.Data,
 		}
+		evt.SetFields(mapstr.M{
+			"message": record,
+			"azure":   eventHubMetadata,
+		})
 
-		in.pipelineClient.Publish(event)
+		in.pipelineClient.Publish(evt)
 
 		in.metrics.sentEvents.Inc()
 	}

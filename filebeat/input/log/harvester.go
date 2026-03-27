@@ -468,12 +468,13 @@ func (h *Harvester) onMessage(
 		fields["message"] = text
 	}
 
-	err := forwarder.Send(beat.Event{
+	evt := beat.Event{
 		Timestamp: timestamp,
-		Fields:    fields,
 		Meta:      meta,
 		Private:   state,
-	}, h.logger)
+	}
+	evt.SetFields(fields)
+	err := forwarder.Send(evt, h.logger)
 	return err == nil
 }
 

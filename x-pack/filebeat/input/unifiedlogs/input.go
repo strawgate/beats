@@ -384,8 +384,9 @@ func makeEvent(timestamp time.Time, message string) beat.Event {
 		"message": message,
 	}
 
-	return beat.Event{
+	e := beat.Event{
 		Timestamp: timestamp,
-		Fields:    fields,
 	}
+	e.SetFields(fields)
+	return e
 }

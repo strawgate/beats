@@ -1217,7 +1217,7 @@ func (mysql *mysqlPlugin) publishTransaction(t *mysqlTransaction) {
 	pbf.Network.Protocol = "mysql"
 	pbf.Error.Message = t.notes
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 	fields["method"] = t.method
 	fields["query"] = t.query

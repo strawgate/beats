@@ -139,7 +139,7 @@ func (p *processor) Run(event *beat.Event) (*beat.Event, error) {
 
 	// Add all parsing/conversion errors to error.message.
 	for _, cefError := range cefErrors {
-		if err := appendErrorMessage(event.Fields, cefError.Error()); err != nil {
+		if err := appendErrorMessage(event.Fields(), cefError.Error()); err != nil {
 			p.log.Warn("Failed adding CEF errors to event.", "error", err)
 			break
 		}

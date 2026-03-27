@@ -419,19 +419,19 @@ func (h *handler) publishEvent(obj, headers mapstr.M, acker *batchACKTracker) er
 		Private:   acker,
 	}
 	if h.messageField == "." {
-		event.Fields = obj
+		event.SetFields(obj)
 	} else {
 		if _, err := event.PutValue(h.messageField, obj); err != nil {
 			return fmt.Errorf("failed to put data into event key %q: %w", h.messageField, err)
 		}
 	}
 	if h.preserveOriginalEvent {
-		event.Fields["event"] = mapstr.M{
+		_ = event.PutValueQuiet("event", mapstr.M{
 			"original": obj.String(),
-		}
+		})
 	}
 	if len(headers) > 0 {
-		event.Fields["headers"] = headers
+		_ = event.PutValueQuiet("headers", headers)
 	}
 
 	h.publish(event)

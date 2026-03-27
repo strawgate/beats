@@ -496,9 +496,9 @@ func (p *azure) publishMarker(ts, eventTime time.Time, inputID string, start boo
 
 	event := beat.Event{
 		Timestamp: ts,
-		Fields:    fields,
 		Private:   tracker,
 	}
+	event.SetFields(fields)
 	tracker.Add()
 	if start {
 		p.logger.Debug("Publishing start write marker")
@@ -540,9 +540,9 @@ func (p *azure) publishUser(u *fetcher.User, state *stateStore, inputID string, 
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    userDoc,
 		Private:   tracker,
 	}
+	event.SetFields(userDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing user %q", u.ID)
@@ -611,9 +611,9 @@ func (p *azure) publishDevice(d *fetcher.Device, state *stateStore, inputID stri
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    deviceDoc,
 		Private:   tracker,
 	}
+	event.SetFields(deviceDoc)
 	tracker.Add()
 
 	p.logger.Debugf("Publishing device %q", d.ID)

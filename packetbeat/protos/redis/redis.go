@@ -308,7 +308,7 @@ func (redis *redisPlugin) newTransaction(requ, resp *redisMessage) beat.Event {
 	pbf.Network.Transport = "tcp"
 	pbf.Network.Protocol = pbf.Event.Dataset
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 	fields["method"] = common.NetString(bytes.ToUpper(requ.method))
 	fields["resource"] = requ.path

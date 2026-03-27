@@ -127,8 +127,8 @@ func (j *job) do(ctx context.Context, id string) {
 		}
 		event := beat.Event{
 			Timestamp: time.Now(),
-			Fields:    fields,
 		}
+		event.SetFields(fields)
 		event.SetID(objectID(j.hash, 0))
 		// locks while data is being saved and published to avoid concurrent map read/writes
 		cp, done := j.state.saveForTx(j.object.Name, j.object.Updated, j.metrics)
@@ -469,34 +469,34 @@ func evaluateJSON(reader *bufio.Reader) (io.Reader, bool, error) {
 func (j *job) createEvent(message []byte, data []mapstr.M, offset int64) beat.Event {
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields: mapstr.M{
-			"message": string(message), // original stringified data
-			"log": mapstr.M{
-				"offset": offset,
-				"file": mapstr.M{
-					"path": j.objectURI,
-				},
-			},
-			"gcs": mapstr.M{
-				"storage": mapstr.M{
-					"bucket": mapstr.M{
-						"name": j.src.BucketName,
-					},
-					"object": mapstr.M{
-						"name":         j.object.Name,
-						"content_type": j.object.ContentType,
-						"json_data":    data, // objectified data, if parseJSON == true, else its empty array
-					},
-				},
-			},
-			// Structs are used here in order to save map allocations
-			"cloud": struct {
-				Provider string `json:"provider"`
-			}{
-				Provider: "google cloud",
+	}
+	event.SetFields(mapstr.M{
+		"message": string(message), // original stringified data
+		"log": mapstr.M{
+			"offset": offset,
+			"file": mapstr.M{
+				"path": j.objectURI,
 			},
 		},
-	}
+		"gcs": mapstr.M{
+			"storage": mapstr.M{
+				"bucket": mapstr.M{
+					"name": j.src.BucketName,
+				},
+				"object": mapstr.M{
+					"name":         j.object.Name,
+					"content_type": j.object.ContentType,
+					"json_data":    data, // objectified data, if parseJSON == true, else its empty array
+				},
+			},
+		},
+		// Structs are used here in order to save map allocations
+		"cloud": struct {
+			Provider string `json:"provider"`
+		}{
+			Provider: "google cloud",
+		},
+	})
 	event.SetID(objectID(j.hash, offset))
 	j.metrics.gcsEventsCreatedTotal.Inc()
 	return event

@@ -50,7 +50,7 @@ func TLSLayer(cfg *tlscommon.TLSConfig, to time.Duration) Layer {
 			connState := tlsConn.ConnectionState()
 			timer.stop()
 
-			tlsmeta.AddTLSMetadata(event.Fields, connState, timer.duration())
+			tlsmeta.AddTLSMetadata(event.Fields(), connState, timer.duration())
 
 			return conn, nil
 		}), nil

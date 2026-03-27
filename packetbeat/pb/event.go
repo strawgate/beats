@@ -92,12 +92,13 @@ func NewFields() *Fields {
 // returns both.
 func NewBeatEvent(timestamp time.Time) (beat.Event, *Fields) {
 	pbf := NewFields()
-	return beat.Event{
+	evt := beat.Event{
 		Timestamp: timestamp,
-		Fields: mapstr.M{
-			FieldsKey: pbf,
-		},
-	}, pbf
+	}
+	evt.SetFields(mapstr.M{
+		FieldsKey: pbf,
+	})
+	return evt, pbf
 }
 
 // GetFields returns a pointer to a Fields object if one is stored within the

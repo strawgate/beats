@@ -49,7 +49,7 @@ func newGeneralizeProcessor(keepNull bool, logger *logp.Logger) *processorFn {
 	g := common.NewGenericEventConverter(keepNull, logger)
 	return newProcessor("generalizeEvent", func(event *beat.Event) (*beat.Event, error) {
 		// Filter out empty events. Empty events are still reported by ACK callbacks.
-		if len(event.Fields) == 0 {
+		if len(event.Fields()) == 0 {
 			return nil, nil
 		}
 
@@ -58,13 +58,13 @@ func newGeneralizeProcessor(keepNull bool, logger *logp.Logger) *processorFn {
 			event.Timestamp = time.Now()
 		}
 
-		fields := g.Convert(event.Fields)
+		fields := g.Convert(event.Fields())
 		if fields == nil {
 			logger.Error("fail to convert to generic event")
 			return nil, nil
 		}
 
-		event.Fields = fields
+		event.SetFields(fields)
 		return event, nil
 	})
 }

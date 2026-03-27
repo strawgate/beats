@@ -238,8 +238,8 @@ func (p *Publisher) PublishScheduledResponse(scheduleID, packID, spaceID, respon
 func (p *Publisher) publishActionResponseEvent(fields map[string]interface{}, timestamp time.Time) {
 	event := beat.Event{
 		Timestamp: timestamp,
-		Fields:    fields,
 	}
+	event.SetFields(fields)
 	p.actionResponsesClient.Publish(event)
 }
 
@@ -279,8 +279,8 @@ func (p *Publisher) PublishQueryProfile(index, queryName, actionID, responseID s
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    fields,
 	}
+	event.SetFields(fields)
 	if index != "" {
 		event.Meta = mapstr.M{events.FieldMetaRawIndex: index}
 	}
@@ -397,21 +397,21 @@ func hitToEvent(index, eventType, idValue, idFieldKey, responseID, spaceID, pack
 
 	event := beat.Event{
 		Timestamp: time.Now(),
-		Fields:    fields,
 	}
+	event.SetFields(fields)
 
 	if reqData != nil {
-		event.Fields["action_data"] = reqData
+		_ = event.PutValueQuiet("action_data", reqData)
 	}
 
 	if responseID != "" {
-		event.Fields["response_id"] = responseID
+		_ = event.PutValueQuiet("response_id", responseID)
 	}
 	if spaceID != "" {
-		event.Fields["space_id"] = spaceID
+		_ = event.PutValueQuiet("space_id", spaceID)
 	}
 	if packID != "" {
-		event.Fields["pack_id"] = packID
+		_ = event.PutValueQuiet("pack_id", packID)
 	}
 	if index != "" {
 		event.Meta = mapstr.M{events.FieldMetaRawIndex: index}

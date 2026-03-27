@@ -88,24 +88,24 @@ func New(
 	}
 
 	event := &beat.Event{
-		Fields: mapstr.M{
-			// beat object was left in for backward compatibility reason for older configs.
-			"beat": mapstr.M{
-				"name":    beatName,
-				"version": bV.String(),
-			},
-			"agent": mapstr.M{
-				"name":    beatName,
-				"version": bV.String(),
-			},
-			// For the Beats that have an observer role
-			"observer": mapstr.M{
-				"name":    beatName,
-				"version": bV.String(),
-			},
-		},
 		Timestamp: time.Now(),
 	}
+	event.SetFields(mapstr.M{
+		// beat object was left in for backward compatibility reason for older configs.
+		"beat": mapstr.M{
+			"name":    beatName,
+			"version": bV.String(),
+		},
+		"agent": mapstr.M{
+			"name":    beatName,
+			"version": bV.String(),
+		},
+		// For the Beats that have an observer role
+		"observer": mapstr.M{
+			"name":    beatName,
+			"version": bV.String(),
+		},
+	})
 
 	nameFormatter, err := fmtstr.CompileEvent(name)
 	if err != nil {

@@ -172,7 +172,7 @@ func (p *transProcessor) Run(event *beat.Event) (*beat.Event, error) {
 // filterEvent validates an event for common required fields with types.
 // If event is to be filtered out the reason is returned as error.
 func validateEvent(event *beat.Event) error {
-	fields := event.Fields
+	fields := event.Fields()
 
 	if event.Timestamp.IsZero() {
 		return errors.New("missing '@timestamp'")
@@ -199,9 +199,10 @@ func validateEvent(event *beat.Event) error {
 // MarshalPacketbeatFields marshals data contained in the _packetbeat field
 // into the event and removes the _packetbeat key.
 func MarshalPacketbeatFields(event *beat.Event, localIPs []net.IP, internalNetworks []string) (*pb.Fields, error) {
-	defer delete(event.Fields, pb.FieldsKey)
+	evFields := event.Fields()
+	defer delete(evFields, pb.FieldsKey)
 
-	fields, err := pb.GetFields(event.Fields)
+	fields, err := pb.GetFields(evFields)
 	if err != nil || fields == nil {
 		return nil, err
 	}
@@ -210,7 +211,7 @@ func MarshalPacketbeatFields(event *beat.Event, localIPs []net.IP, internalNetwo
 		return nil, err
 	}
 
-	if err = fields.MarshalMapStr(event.Fields); err != nil {
+	if err = fields.MarshalMapStr(evFields); err != nil {
 		return nil, err
 	}
 	return fields, nil

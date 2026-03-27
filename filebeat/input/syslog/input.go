@@ -316,8 +316,8 @@ func newBeatEvent(timestamp time.Time, metadata inputsource.NetworkMetadata, fie
 		Meta: mapstr.M{
 			"truncated": metadata.Truncated,
 		},
-		Fields: fields,
 	}
+	event.SetFields(fields)
 	if metadata.RemoteAddr != nil {
 		event.PutValue("log.source.address", metadata.RemoteAddr.String())
 	}

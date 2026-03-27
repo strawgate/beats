@@ -346,9 +346,8 @@ func (p *plugin) buildEvent(cfg *config, pi *parsingInfo) (*beat.Event, error) {
 	}
 
 	evt, pbf := pb.NewBeatEvent(m.ts)
-	fields := evt.Fields
-	fields["type"] = "sip"
-	fields["status"] = status
+	evt.PutValueQuiet("type", "sip")
+	evt.PutValueQuiet("status", status)
 
 	var sipFields ProtocolFields
 	if m.isRequest {
@@ -377,7 +376,7 @@ func (p *plugin) buildEvent(cfg *config, pi *parsingInfo) (*beat.Event, error) {
 
 	populateEventFields(cfg, pi, pbf, sipFields)
 
-	if err := pb.MarshalStruct(evt.Fields, "sip", sipFields); err != nil {
+	if err := pb.MarshalStruct(evt.Fields(), "sip", sipFields); err != nil {
 		return nil, err
 	}
 

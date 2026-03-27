@@ -132,7 +132,7 @@ func (f *truncateFields) addTruncatedString(field, value string, event *beat.Eve
 	}
 
 	if isTruncated {
-		_ = mapstr.AddTagsWithKey(event.Fields, "log.flags", []string{"truncated"})
+		_ = mapstr.AddTagsWithKey(event.Fields(), "log.flags", []string{"truncated"})
 	}
 	return nil
 }
@@ -148,7 +148,7 @@ func (f *truncateFields) addTruncatedByte(field string, value []byte, event *bea
 	}
 
 	if isTruncated {
-		_ = mapstr.AddTagsWithKey(event.Fields, "log.flags", []string{"truncated"})
+		_ = mapstr.AddTagsWithKey(event.Fields(), "log.flags", []string{"truncated"})
 	}
 	return nil
 }

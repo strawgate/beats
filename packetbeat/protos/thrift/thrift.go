@@ -1117,7 +1117,7 @@ func (thrift *thriftPlugin) publishTransactions() {
 			status = common.OK_STATUS
 		}
 
-		fields := evt.Fields
+		fields := evt.Fields()
 		fields["type"] = pbf.Event.Dataset
 		fields["status"] = status
 		thriftFields := mapstr.M{}

@@ -540,7 +540,7 @@ func (http *httpPlugin) newTransaction(requ, resp *message) beat.Event {
 	pbf.Network.Transport = "tcp"
 	pbf.Network.Protocol = "http"
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Network.Protocol
 	fields["status"] = status
 
@@ -585,11 +585,11 @@ func (http *httpPlugin) newTransaction(requ, resp *message) beat.Event {
 
 		// url
 		u := newURL(host, int64(port), path, params)
-		pb.MarshalStruct(evt.Fields, "url", u)
+		pb.MarshalStruct(evt.Fields(),"url", u)
 
 		// user-agent
 		userAgent := ecs.UserAgent{Original: string(requ.userAgent)}
-		pb.MarshalStruct(evt.Fields, "user_agent", userAgent)
+		pb.MarshalStruct(evt.Fields(),"user_agent", userAgent)
 
 		// packetbeat root fields
 		if http.sendRequest {
@@ -628,7 +628,7 @@ func (http *httpPlugin) newTransaction(requ, resp *message) beat.Event {
 		}
 	}
 
-	pb.MarshalStruct(evt.Fields, "http", httpFields)
+	pb.MarshalStruct(evt.Fields(),"http", httpFields)
 	return evt
 }
 

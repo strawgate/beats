@@ -75,7 +75,7 @@ func NewAddTags(target string, tags []string) beat.Processor {
 }
 
 func (at *addTags) Run(event *beat.Event) (*beat.Event, error) {
-	_ = mapstr.AddTagsWithKey(event.Fields, at.target, at.tags)
+	_ = mapstr.AddTagsWithKey(event.Fields(), at.target, at.tags)
 	return event, nil
 }
 

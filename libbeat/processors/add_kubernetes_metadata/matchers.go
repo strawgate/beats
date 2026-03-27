@@ -182,9 +182,9 @@ func NewFieldFormatMatcher(cfg config.C, _ *logp.Logger) (Matcher, error) {
 }
 
 func (f *FieldFormatMatcher) MetadataIndex(event mapstr.M) string {
-	bytes, err := f.Codec.Encode("", &beat.Event{
-		Fields: event,
-	})
+	e := &beat.Event{}
+	e.SetFields(event)
+	bytes, err := f.Codec.Encode("", e)
 
 	if err != nil {
 		logp.Debug("kubernetes", "Unable to apply field format pattern on event")

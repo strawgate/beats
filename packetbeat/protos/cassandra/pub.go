@@ -44,7 +44,7 @@ func (pub *transPub) onTransaction(requ, resp *message) error {
 	}
 
 	event := pub.createEvent(requ, resp)
-	if event.Fields != nil {
+	if event.Fields() != nil {
 		pub.results(event)
 	}
 	return nil
@@ -76,7 +76,7 @@ func (pub *transPub) createEvent(requ, resp *message) beat.Event {
 	pbf.Network.Transport = "tcp"
 	pbf.Network.Protocol = pbf.Event.Dataset
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 
 	cassandra := mapstr.M{}

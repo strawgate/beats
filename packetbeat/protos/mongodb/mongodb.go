@@ -412,7 +412,7 @@ func (mongodb *mongodbPlugin) publishTransaction(t *transaction) {
 	pbf.Network.Transport = "tcp"
 	pbf.Network.Protocol = pbf.Event.Dataset
 
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 	if t.error == "" {
 		fields["status"] = common.OK_STATUS

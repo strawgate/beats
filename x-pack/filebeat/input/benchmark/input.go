@@ -147,13 +147,13 @@ func publishEvt(publisher stateless.Publisher, msg string, line uint64, filename
 	timestamp := time.Now()
 	evt := beat.Event{
 		Timestamp: timestamp,
-		Fields: mapstr.M{
-			"message":  msg,
-			"line":     line,
-			"filename": filename,
-			"thread":   thread,
-		},
 	}
+	evt.SetFields(mapstr.M{
+		"message":  msg,
+		"line":     line,
+		"filename": filename,
+		"thread":   thread,
+	})
 	publisher.Publish(evt)
 	metrics.publishingTime.Update(time.Since(timestamp).Nanoseconds())
 	metrics.eventsPublished.Add(1)

@@ -123,9 +123,8 @@ func (p *dhcpv4Plugin) parseDHCPv4(pkt *protos.Packet) *beat.Event {
 	pbf.Network.Transport = "udp"
 	pbf.Network.Protocol = pbf.Event.Dataset
 
-	fields := evt.Fields
-	fields["type"] = pbf.Event.Dataset
-	fields["status"] = "OK"
+	evt.PutValueQuiet("type", pbf.Event.Dataset)
+	evt.PutValueQuiet("status", "OK")
 
 	dhcpData := mapstr.M{
 		"op_code":        strings.ToLower(v4.OpCode.String()),
@@ -136,7 +135,7 @@ func (p *dhcpv4Plugin) parseDHCPv4(pkt *protos.Packet) *beat.Event {
 		"flags":          strings.ToLower(v4.FlagsToString()),
 		"client_mac":     p.formatHardwareAddr(v4),
 	}
-	fields["dhcpv4"] = dhcpData
+	evt.PutValueQuiet("dhcpv4", dhcpData)
 
 	if !v4.ClientIPAddr.IsUnspecified() {
 		dhcpData.Put("client_ip", v4.ClientIPAddr.String())

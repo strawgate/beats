@@ -138,7 +138,7 @@ func New(cfg *conf.C, log *logp.Logger) (beat.Processor, error) {
 }
 
 func (n *nomadAnnotator) Run(event *beat.Event) (*beat.Event, error) {
-	index := n.matchers.MetadataIndex(event.Fields)
+	index := n.matchers.MetadataIndex(event.Fields())
 	if index == "" {
 		return event, nil
 	}

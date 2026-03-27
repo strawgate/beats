@@ -290,7 +290,7 @@ func (icmp *icmpPlugin) publishTransaction(trans *icmpTransaction) {
 	pbf.Error.Message = trans.notes
 
 	// common fields - group "event"
-	fields := evt.Fields
+	fields := evt.Fields()
 	fields["type"] = pbf.Event.Dataset
 	fields["path"] = trans.tuple.dstIP // what is requested (dst ip)
 	if trans.HasError() {
