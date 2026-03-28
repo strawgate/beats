@@ -55,7 +55,7 @@ func TestEvent(t *testing.T) {
 			"metaLevel0Value2": "untouched",
 			"metaUntouchedMap": metaUntouchedMap,
 		},
-		fields: SmallMapFromMapStr(mapstr.M{
+		fields: mapstr.M{
 			"a.b":               "c",
 			"fieldsLevel0Map":   fieldsNestedMap,
 			"fieldsLevel0Value": "fieldsvalue1",
@@ -63,7 +63,7 @@ func TestEvent(t *testing.T) {
 			// to verify that existing keys remain
 			"fieldsLevel0Value2": "untouched",
 			"fieldsUntouchedMap": fieldsUntouchedMap,
-		}),
+		},
 	}
 
 	t.Run("empty", func(t *testing.T) {
@@ -386,10 +386,10 @@ func TestEvent(t *testing.T) {
 					"a": 9,
 					"c": 10,
 				},
-				fields: SmallMapFromMapStr(mapstr.M{
+				fields: mapstr.M{
 					"a": 9,
 					"c": 10,
-				}),
+				},
 			}
 
 			_, err := event.PutValue("a.c", 10)
@@ -402,9 +402,9 @@ func TestEvent(t *testing.T) {
 
 		t.Run("hierarchy", func(t *testing.T) {
 			event := &Event{
-				fields: SmallMapFromMapStr(mapstr.M{
+				fields: mapstr.M{
 					"a.b": 1,
-				}),
+				},
 			}
 			err := event.Delete("a.b")
 			require.NoError(t, err)
@@ -559,10 +559,10 @@ func TestEvent(t *testing.T) {
 			event := &Event{
 				Timestamp: time.Now(),
 				Meta:      mapstr.M{"existing_meta": "preserved"},
-				fields: SmallMapFromMapStr(mapstr.M{
+				fields: mapstr.M{
 					"existing": "value",
 					"nested":   mapstr.M{"a": "1"},
-				}),
+				},
 			}
 
 			update := mapstr.M{
@@ -596,10 +596,10 @@ func TestEvent(t *testing.T) {
 
 		t.Run("fast path no-overwrite - no special keys", func(t *testing.T) {
 			event := &Event{
-				fields: SmallMapFromMapStr(mapstr.M{
+				fields: mapstr.M{
 					"existing": "original",
 					"nested":   mapstr.M{"a": "1"},
-				}),
+				},
 			}
 
 			update := mapstr.M{
@@ -630,7 +630,7 @@ func TestEvent(t *testing.T) {
 			}
 			updateCopy := update.Clone()
 
-			event := &Event{fields: SmallMapFromMapStr(mapstr.M{})}
+			event := &Event{fields: mapstr.M{}}
 			event.DeepUpdate(update)
 
 			require.Equal(t, updateCopy, update,
@@ -645,9 +645,9 @@ func TestEvent(t *testing.T) {
 			Meta: mapstr.M{
 				"metakey": "metavalue",
 			},
-			fields: SmallMapFromMapStr(mapstr.M{
+			fields: mapstr.M{
 				"key": "value",
-			}),
+			},
 		}
 
 		exp := mapstr.M{
@@ -677,10 +677,10 @@ func BenchmarkEventDeepUpdate_NoSpecialKeys(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		event := &Event{
 			Timestamp: time.Now(),
-			fields: SmallMapFromMapStr(mapstr.M{
+			fields: mapstr.M{
 				"message": "test",
 				"host":    mapstr.M{"name": "testhost"},
-			}),
+			},
 		}
 		event.DeepUpdate(fields)
 	}
@@ -702,10 +702,10 @@ func BenchmarkEventDeepUpdate_WithSpecialKeys(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		event := &Event{
 			Timestamp: time.Now(),
-			fields: SmallMapFromMapStr(mapstr.M{
+			fields: mapstr.M{
 				"message": "test",
 				"host":    mapstr.M{"name": "testhost"},
-			}),
+			},
 		}
 		event.DeepUpdate(fields)
 	}
@@ -721,9 +721,9 @@ func BenchmarkEventDeepUpdateNoOverwrite_NoSpecialKeys(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		event := &Event{
-			fields: SmallMapFromMapStr(mapstr.M{
+			fields: mapstr.M{
 				"agent": mapstr.M{"id": "existing", "type": "filebeat"},
-			}),
+			},
 		}
 		event.DeepUpdateNoOverwrite(fields)
 	}

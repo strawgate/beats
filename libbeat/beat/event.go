@@ -35,7 +35,6 @@ var (
 	updateModeNoOverwrite updateMode = false
 )
 
-// FlagField fields used to keep information or errors when events are parsed.
 const FlagField = "log.flags"
 
 const (
@@ -44,20 +43,21 @@ const (
 	ErrorFieldKey     = "error"
 	metadataKeyPrefix = MetadataFieldKey + "."
 	metadataKeyOffset = len(metadataKeyPrefix)
+
+	defaultFieldsCap    = 12
+	maxPooledFieldCount = 16
 )
 
 // Event is the common event format shared by all beats.
 type Event struct {
-	Timestamp time.Time
-	Meta      mapstr.M
-
-	// fields is the primary storage for event data. Uses SmallMap for
-	// zero-allocation storage of typical events (≤20 top-level keys).
-	fields SmallMap
-
-	// Private is for input-specific data.
+	Timestamp  time.Time
+	Meta       mapstr.M
 	Private    interface{}
 	TimeSeries bool
+
+	fields     mapstr.M // private — use Fields()/SetFields()/GetValue/PutValue
+	fieldCount int      // tracks top-level key insertions for pool sizing
+	hasCow     bool     // true when fields contains at least one cowMap value
 }
 
 var (
@@ -71,17 +71,25 @@ var (
 // --- Pool ---
 
 var eventPool = sync.Pool{
-	New: func() interface{} { return &Event{} },
+	New: func() interface{} {
+		return &Event{
+			fields: make(mapstr.M, defaultFieldsCap),
+		}
+	},
 }
 
-// NewEvent returns an Event from the pool.
 func NewEvent() *Event {
 	return eventPool.Get().(*Event) //nolint:errcheck
 }
 
-// ReleaseEvent returns an Event to the pool for reuse.
 func ReleaseEvent(e *Event) {
-	e.fields.Clear()
+	if e.fieldCount > maxPooledFieldCount {
+		e.fields = make(mapstr.M, defaultFieldsCap)
+	} else {
+		clear(e.fields)
+	}
+	e.fieldCount = 0
+	e.hasCow = false
 	e.Timestamp = time.Time{}
 	e.Meta = nil
 	e.Private = nil
@@ -91,63 +99,74 @@ func ReleaseEvent(e *Event) {
 
 // --- Fields access ---
 
-// Fields returns the event's fields as a mapstr.M. cowMap values are
-// unwrapped to their shared references. The returned map is suitable
-// for read-only use (encoding). For a mutable copy, use CloneFields.
+// Fields returns the event's fields as a mapstr.M with cowMap values
+// unwrapped. Suitable for read-only use (encoding).
 func (e *Event) Fields() mapstr.M {
-	return e.renderFields()
-}
-
-// SetFields sets the event's fields from a mapstr.M.
-func (e *Event) SetFields(m mapstr.M) {
-	e.fields.Clear()
-	for k, v := range m {
-		e.fields.Set(k, v)
+	if !e.hasCow {
+		return e.fields
 	}
-}
-
-// CloneFields returns a deep copy of the fields. cowMap entries are
-// shared by reference (COW handles isolation on write).
-func (e *Event) CloneFields() mapstr.M {
-	m := make(mapstr.M, e.fields.Len())
-	e.fields.Range(func(k string, v interface{}) bool {
-		if _, ok := v.(*cowMap); ok {
-			m[k] = v // share cowMap reference
-		} else if sub, ok := v.(mapstr.M); ok {
-			m[k] = sub.Clone()
-		} else {
-			m[k] = v
-		}
-		return true
-	})
-	return m
-}
-
-// renderFields builds a mapstr.M from the SmallMap, unwrapping cowMaps.
-func (e *Event) renderFields() mapstr.M {
-	if e.fields.Len() == 0 {
-		return nil
-	}
-	m := make(mapstr.M, e.fields.Len())
-	e.fields.Range(func(k string, v interface{}) bool {
+	m := make(mapstr.M, len(e.fields))
+	for k, v := range e.fields {
 		if cm, ok := v.(*cowMap); ok {
 			m[k] = cm.shared
 		} else {
 			m[k] = v
 		}
-		return true
-	})
+	}
 	return m
+}
+
+// SetFields sets the event's fields from a mapstr.M.
+func (e *Event) SetFields(m mapstr.M) {
+	if e.fields == nil {
+		e.fields = make(mapstr.M, defaultFieldsCap)
+	} else {
+		clear(e.fields)
+	}
+	e.fieldCount = 0
+	e.hasCow = false
+	for k, v := range m {
+		e.fields[k] = v
+		e.fieldCount++
+		if _, ok := v.(*cowMap); ok {
+			e.hasCow = true
+		}
+	}
+}
+
+// CloneFields returns a deep copy of fields. cowMap entries are shared
+// by reference (COW handles isolation on write).
+func (e *Event) CloneFields() mapstr.M {
+	if e.fields == nil {
+		return nil
+	}
+	if !e.hasCow {
+		return e.fields.Clone()
+	}
+	c := make(mapstr.M, len(e.fields))
+	for k, v := range e.fields {
+		if _, ok := v.(*cowMap); ok {
+			c[k] = v // share cowMap reference
+		} else if m, ok := v.(mapstr.M); ok {
+			c[k] = m.Clone()
+		} else {
+			c[k] = v
+		}
+	}
+	return c
+}
+
+// Materialize is an alias for Fields().
+func (e *Event) Materialize() mapstr.M {
+	return e.Fields()
 }
 
 // --- Core accessors ---
 
-// SetID overwrites the "id" field in the events metadata.
 func (e *Event) SetID(id string) {
 	_, _ = e.PutValue(metadataKeyPrefix+"_id", id)
 }
 
-// GetValue gets a value from the event.
 func (e *Event) GetValue(key string) (interface{}, error) {
 	if key == TimestampFieldKey {
 		return e.Timestamp, nil
@@ -162,14 +181,18 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return e.Meta.GetValue(subKey)
 	}
 
+	if e.fields == nil {
+		return nil, mapstr.ErrKeyNotFound
+	}
+
 	topKey, subKey := splitDot(key)
-	val, ok := e.fields.Get(topKey)
+
+	val, ok := e.fields[topKey]
 	if !ok {
 		return nil, mapstr.ErrKeyNotFound
 	}
 
 	if subKey == "" {
-		// Top-level read — clone cowMap/map sub-trees for safety.
 		switch v := val.(type) {
 		case *cowMap:
 			return v.shared.Clone(), nil
@@ -178,7 +201,6 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		}
 	}
 
-	// Dotted key — navigate into the value.
 	switch v := val.(type) {
 	case *cowMap:
 		result, err := v.shared.GetValue(subKey)
@@ -196,7 +218,6 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 	}
 }
 
-// PutValue sets a value, returning the old value.
 func (e *Event) PutValue(key string, v interface{}) (interface{}, error) {
 	if key == TimestampFieldKey {
 		return e.setTimestamp(v)
@@ -211,51 +232,27 @@ func (e *Event) PutValue(key string, v interface{}) (interface{}, error) {
 		return e.Meta.Put(subKey, v)
 	}
 
+	e.ensureFields()
 	topKey, subKey := splitDot(key)
 
 	if subKey == "" {
-		old, _ := e.fields.Get(topKey)
-		e.fields.Set(topKey, v)
-		// Return clone of old cowMap to honor contract.
+		old := e.fields[topKey]
+		if old == nil {
+			e.fieldCount++
+		}
+		e.fields[topKey] = v
+		if _, ok := v.(*cowMap); ok {
+			e.hasCow = true
+		}
 		if cm, ok := old.(*cowMap); ok {
 			return cm.shared.Clone(), nil
 		}
 		return old, nil
 	}
 
-	// Dotted key — navigate into sub-map.
-	existing, ok := e.fields.Get(topKey)
-	if !ok {
-		// Create new nested map.
-		newMap := mapstr.M{}
-		old, err := newMap.Put(subKey, v)
-		if err != nil {
-			return nil, err
-		}
-		e.fields.Set(topKey, newMap)
-		return old, nil
-	}
-
-	switch ev := existing.(type) {
-	case *cowMap:
-		// Copy-on-write.
-		cloned := ev.shared.Clone()
-		e.fields.Set(topKey, cloned)
-		return cloned.Put(subKey, v)
-	case mapstr.M:
-		return ev.Put(subKey, v)
-	default:
-		newMap := mapstr.M{}
-		old, err := newMap.Put(subKey, v)
-		if err != nil {
-			return nil, err
-		}
-		e.fields.Set(topKey, newMap)
-		return old, nil
-	}
+	return e.putDotted(topKey, subKey, v)
 }
 
-// PutValueQuiet sets a value without returning the old value.
 func (e *Event) PutValueQuiet(key string, v interface{}) error {
 	if key == TimestampFieldKey {
 		_, err := e.setTimestamp(v)
@@ -272,46 +269,24 @@ func (e *Event) PutValueQuiet(key string, v interface{}) error {
 		return err
 	}
 
+	e.ensureFields()
 	topKey, subKey := splitDot(key)
 
 	if subKey == "" {
-		e.fields.Set(topKey, v)
+		if _, exists := e.fields[topKey]; !exists {
+			e.fieldCount++
+		}
+		e.fields[topKey] = v
+		if _, ok := v.(*cowMap); ok {
+			e.hasCow = true
+		}
 		return nil
 	}
 
-	// Dotted key — navigate into sub-map.
-	existing, ok := e.fields.Get(topKey)
-	if !ok {
-		newMap := mapstr.M{}
-		_, err := newMap.Put(subKey, v)
-		if err != nil {
-			return err
-		}
-		e.fields.Set(topKey, newMap)
-		return nil
-	}
-
-	switch ev := existing.(type) {
-	case *cowMap:
-		cloned := ev.shared.Clone()
-		e.fields.Set(topKey, cloned)
-		_, err := cloned.Put(subKey, v)
-		return err
-	case mapstr.M:
-		_, err := ev.Put(subKey, v)
-		return err
-	default:
-		newMap := mapstr.M{}
-		_, err := newMap.Put(subKey, v)
-		if err != nil {
-			return err
-		}
-		e.fields.Set(topKey, newMap)
-		return nil
-	}
+	_, err := e.putDotted(topKey, subKey, v)
+	return err
 }
 
-// Delete deletes the given key from the event.
 func (e *Event) Delete(key string) error {
 	if key == TimestampFieldKey {
 		return ErrDeleteTimestamp
@@ -325,25 +300,29 @@ func (e *Event) Delete(key string) error {
 		}
 		return e.Meta.Delete(subKey)
 	}
+	if e.fields == nil {
+		return mapstr.ErrKeyNotFound
+	}
 
 	topKey, subKey := splitDot(key)
 
 	if subKey == "" {
-		if e.fields.Delete(topKey) {
+		if _, ok := e.fields[topKey]; ok {
+			delete(e.fields, topKey)
 			return nil
 		}
 		return mapstr.ErrKeyNotFound
 	}
 
-	existing, ok := e.fields.Get(topKey)
+	val, ok := e.fields[topKey]
 	if !ok {
 		return mapstr.ErrKeyNotFound
 	}
 
-	switch ev := existing.(type) {
+	switch ev := val.(type) {
 	case *cowMap:
 		cloned := ev.shared.Clone()
-		e.fields.Set(topKey, cloned)
+		e.fields[topKey] = cloned
 		return cloned.Delete(subKey)
 	case mapstr.M:
 		return ev.Delete(subKey)
@@ -352,7 +331,6 @@ func (e *Event) Delete(key string) error {
 	}
 }
 
-// HasKey returns true if the key exists.
 func (e *Event) HasKey(key string) (bool, error) {
 	if key == TimestampFieldKey || key == MetadataFieldKey {
 		return true, nil
@@ -363,10 +341,13 @@ func (e *Event) HasKey(key string) (bool, error) {
 		}
 		return e.Meta.HasKey(subKey)
 	}
+	if e.fields == nil {
+		return false, nil
+	}
 
 	topKey, subKey := splitDot(key)
 
-	val, ok := e.fields.Get(topKey)
+	val, ok := e.fields[topKey]
 	if !ok {
 		return false, nil
 	}
@@ -399,7 +380,6 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		return
 	}
 
-	// Handle @timestamp.
 	timestampValue, timestampExists := d[TimestampFieldKey]
 	if timestampExists {
 		if mode == updateModeOverwrite {
@@ -409,7 +389,6 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		defer func() { d[TimestampFieldKey] = timestampValue }()
 	}
 
-	// Handle @metadata.
 	metaValue, metaExists := d[MetadataFieldKey]
 	if metaExists {
 		var metaUpdate mapstr.M
@@ -438,11 +417,11 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		return
 	}
 
-	// Merge remaining keys into fields.
-	for k, v := range d {
-		existing, exists := e.fields.Get(k)
+	e.ensureFields()
 
-		// Check if update value is a map that needs merging.
+	for k, v := range d {
+		existing, exists := e.fields[k]
+
 		var srcMap mapstr.M
 		switch sv := v.(type) {
 		case mapstr.M:
@@ -452,14 +431,15 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		}
 
 		if srcMap == nil || !exists {
-			// Scalar or new key — just set.
 			if mode == updateModeOverwrite || !exists {
-				e.fields.Set(k, v)
+				if !exists {
+					e.fieldCount++
+				}
+				e.fields[k] = v
 			}
 			continue
 		}
 
-		// Both sides are maps — merge.
 		switch ev := existing.(type) {
 		case *cowMap:
 			cloned := ev.shared.Clone()
@@ -469,7 +449,7 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 			case updateModeNoOverwrite:
 				cloned.DeepUpdateNoOverwrite(srcMap)
 			}
-			e.fields.Set(k, cloned)
+			e.fields[k] = cloned
 		case mapstr.M:
 			switch mode {
 			case updateModeOverwrite:
@@ -479,7 +459,7 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 			}
 		default:
 			if mode == updateModeOverwrite {
-				e.fields.Set(k, v)
+				e.fields[k] = v
 			}
 		}
 	}
@@ -493,13 +473,50 @@ func (e *Event) Clone() *Event {
 		Meta:       e.Meta.Clone(),
 		Private:    e.Private,
 		TimeSeries: e.TimeSeries,
+		hasCow:     e.hasCow,
 	}
-	// Clone SmallMap — cowMap entries are shared by reference.
-	c.fields = e.fields.Clone()
+	c.fields = e.CloneFields()
 	return c
 }
 
 // --- Utility ---
+
+func (e *Event) ensureFields() {
+	if e.fields == nil {
+		e.fields = make(mapstr.M, defaultFieldsCap)
+	}
+}
+
+func (e *Event) putDotted(topKey, subKey string, v interface{}) (interface{}, error) {
+	existing, ok := e.fields[topKey]
+	if !ok {
+		newMap := mapstr.M{}
+		old, err := newMap.Put(subKey, v)
+		if err != nil {
+			return nil, err
+		}
+		e.fields[topKey] = newMap
+		e.fieldCount++
+		return old, nil
+	}
+
+	switch ev := existing.(type) {
+	case *cowMap:
+		cloned := ev.shared.Clone()
+		e.fields[topKey] = cloned
+		return cloned.Put(subKey, v)
+	case mapstr.M:
+		return ev.Put(subKey, v)
+	default:
+		newMap := mapstr.M{}
+		old, err := newMap.Put(subKey, v)
+		if err != nil {
+			return nil, err
+		}
+		e.fields[topKey] = newMap
+		return old, nil
+	}
+}
 
 func (e *Event) setTimestamp(v interface{}) (interface{}, error) {
 	prevValue := e.Timestamp
@@ -526,7 +543,6 @@ func (e *Event) metadataSubKey(key string) (string, bool) {
 	return subKey, true
 }
 
-// SetErrorWithOption sets the event error field.
 func (e *Event) SetErrorWithOption(message string, addErrKey bool, data string, field string) {
 	if !addErrKey {
 		return
@@ -538,10 +554,10 @@ func (e *Event) SetErrorWithOption(message string, addErrKey bool, data string, 
 	if field != "" {
 		errorField["field"] = field
 	}
-	e.fields.Set(ErrorFieldKey, errorField)
+	e.ensureFields()
+	e.fields[ErrorFieldKey] = errorField
 }
 
-// String returns a string representation of the event.
 func (e *Event) String() string {
 	m := mapstr.M{
 		TimestampFieldKey: e.Timestamp,
@@ -550,35 +566,26 @@ func (e *Event) String() string {
 	if e.Meta != nil {
 		m[MetadataFieldKey] = e.Meta
 	}
-	m.DeepUpdate(e.renderFields())
+	m.DeepUpdate(e.Fields())
 	return m.String()
 }
 
-// Flatten returns a flat map with dot-separated keys.
 func (e *Event) Flatten() mapstr.M {
-	f := e.renderFields()
+	f := e.Fields()
 	if f == nil {
 		return nil
 	}
 	return f.Flatten()
 }
 
-// FlattenKeys returns a flat list of all dot-separated key paths.
 func (e *Event) FlattenKeys() *[]string {
-	f := e.renderFields()
+	f := e.Fields()
 	if f == nil {
 		return nil
 	}
 	return f.FlattenKeys()
 }
 
-// Materialize is an alias for Fields() — renders the SmallMap into a
-// mapstr.M with cowMaps unwrapped. Kept for backward compatibility.
-func (e *Event) Materialize() mapstr.M {
-	return e.renderFields()
-}
-
-// splitDot splits a key on the first dot. If no dot, subKey is empty.
 func splitDot(key string) (topKey, subKey string) {
 	if dot := strings.IndexByte(key, '.'); dot >= 0 {
 		return key[:dot], key[dot+1:]
