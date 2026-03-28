@@ -161,6 +161,25 @@ func (e *Event) CloneFields() mapstr.M {
 	return c
 }
 
+// FieldsUnsafe returns the fields with cowMap values unwrapped to their
+// shared references. No cloning — the returned map shares data with the
+// processor's cached state. Only safe for read-only consumers (encoder).
+// Callers MUST NOT modify the returned map or any nested values.
+func (e *Event) FieldsUnsafe() mapstr.M {
+	if !e.hasCow {
+		return e.fields
+	}
+	// Unwrap cowMaps in place — safe since the event is about to be
+	// encoded and discarded.
+	for k, v := range e.fields {
+		if cm, ok := v.(*cowMap); ok {
+			e.fields[k] = cm.shared
+		}
+	}
+	e.hasCow = false
+	return e.fields
+}
+
 // Materialize is an alias for Fields().
 func (e *Event) Materialize() mapstr.M {
 	return e.Fields()

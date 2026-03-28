@@ -152,8 +152,7 @@ func BenchmarkRealProcessorPipelinePooled(b *testing.B) {
 		}
 		e, _ = builtinMeta.Run(e)
 		e, _ = rename.Run(e)
-		e.Materialize()
-		benchSink = e.Fields
+		benchSink = e.FieldsUnsafe()
 		beat.ReleaseEvent(e)
 	}
 }
