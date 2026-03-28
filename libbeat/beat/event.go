@@ -99,21 +99,10 @@ func ReleaseEvent(e *Event) {
 
 // --- Fields access ---
 
-// Fields returns the event's fields as a mapstr.M with cowMap values
-// unwrapped. Suitable for read-only use (encoding).
+// Fields returns a deep copy of the event's fields as a mapstr.M.
+// cowMap values are unwrapped and cloned. Safe for mutation by callers.
 func (e *Event) Fields() mapstr.M {
-	if !e.hasCow {
-		return e.fields
-	}
-	m := make(mapstr.M, len(e.fields))
-	for k, v := range e.fields {
-		if cm, ok := v.(*cowMap); ok {
-			m[k] = cm.shared
-		} else {
-			m[k] = v
-		}
-	}
-	return m
+	return e.CloneFields()
 }
 
 // SetFields sets the event's fields from a mapstr.M.
