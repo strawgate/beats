@@ -102,7 +102,23 @@ func ReleaseEvent(e *Event) {
 // Fields returns a deep copy of the event's fields as a mapstr.M.
 // cowMap values are unwrapped and cloned. Safe for mutation by callers.
 func (e *Event) Fields() mapstr.M {
-	return e.CloneFields()
+	if e.fields == nil {
+		return nil
+	}
+	if !e.hasCow {
+		return e.fields.Clone()
+	}
+	c := make(mapstr.M, len(e.fields))
+	for k, v := range e.fields {
+		if cm, ok := v.(*cowMap); ok {
+			c[k] = cm.shared.Clone()
+		} else if m, ok := v.(mapstr.M); ok {
+			c[k] = m.Clone()
+		} else {
+			c[k] = v
+		}
+	}
+	return c
 }
 
 // SetFields sets the event's fields from a mapstr.M.
@@ -174,37 +190,32 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return nil, mapstr.ErrKeyNotFound
 	}
 
+	// Check if top-level key holds a cowMap.
 	topKey, subKey := splitDot(key)
-
-	val, ok := e.fields[topKey]
-	if !ok {
-		return nil, mapstr.ErrKeyNotFound
-	}
-
-	if subKey == "" {
-		switch v := val.(type) {
-		case *cowMap:
-			return v.shared.Clone(), nil
-		default:
-			return v, nil
+	if val, ok := e.fields[topKey]; ok {
+		if subKey == "" {
+			switch v := val.(type) {
+			case *cowMap:
+				return v.shared.Clone(), nil
+			default:
+				return v, nil
+			}
+		}
+		// Dotted key into a cowMap.
+		if cm, ok := val.(*cowMap); ok {
+			result, err := cm.shared.GetValue(subKey)
+			if err != nil {
+				return nil, err
+			}
+			if m, ok := result.(mapstr.M); ok {
+				return m.Clone(), nil
+			}
+			return result, nil
 		}
 	}
 
-	switch v := val.(type) {
-	case *cowMap:
-		result, err := v.shared.GetValue(subKey)
-		if err != nil {
-			return nil, err
-		}
-		if m, ok := result.(mapstr.M); ok {
-			return m.Clone(), nil
-		}
-		return result, nil
-	case mapstr.M:
-		return v.GetValue(subKey)
-	default:
-		return nil, mapstr.ErrKeyNotFound
-	}
+	// Delegate to mapstr for dotted-key navigation and literal key fallback.
+	return e.fields.GetValue(key)
 }
 
 func (e *Event) PutValue(key string, v interface{}) (interface{}, error) {
@@ -303,21 +314,16 @@ func (e *Event) Delete(key string) error {
 		return mapstr.ErrKeyNotFound
 	}
 
-	val, ok := e.fields[topKey]
-	if !ok {
-		return mapstr.ErrKeyNotFound
+	if val, ok := e.fields[topKey]; ok {
+		if cm, ok := val.(*cowMap); ok {
+			cloned := cm.shared.Clone()
+			e.fields[topKey] = cloned
+			return cloned.Delete(subKey)
+		}
 	}
 
-	switch ev := val.(type) {
-	case *cowMap:
-		cloned := ev.shared.Clone()
-		e.fields[topKey] = cloned
-		return cloned.Delete(subKey)
-	case mapstr.M:
-		return ev.Delete(subKey)
-	default:
-		return mapstr.ErrKeyNotFound
-	}
+	// Delegate to mapstr for dotted-key navigation and literal key fallback.
+	return e.fields.Delete(key)
 }
 
 func (e *Event) HasKey(key string) (bool, error) {
@@ -336,23 +342,19 @@ func (e *Event) HasKey(key string) (bool, error) {
 
 	topKey, subKey := splitDot(key)
 
-	val, ok := e.fields[topKey]
-	if !ok {
-		return false, nil
-	}
-	if subKey == "" {
-		return true, nil
+	if val, ok := e.fields[topKey]; ok {
+		if subKey == "" {
+			return true, nil
+		}
+		if cm, ok := val.(*cowMap); ok {
+			return cm.shared.HasKey(subKey)
+		}
 	}
 
-	switch v := val.(type) {
-	case *cowMap:
-		return v.shared.HasKey(subKey)
-	case mapstr.M:
-		return v.HasKey(subKey)
-	default:
-		return false, nil
-	}
+	// Delegate to mapstr for dotted-key navigation and literal key fallback.
+	return e.fields.HasKey(key)
 }
+
 
 // --- DeepUpdate ---
 
@@ -556,8 +558,7 @@ func (e *Event) SetErrorWithOption(message string, addErrKey bool, data string, 
 	if field != "" {
 		errorField["field"] = field
 	}
-	e.ensureFields()
-	e.fields[ErrorFieldKey] = errorField
+	_ = e.PutValueQuiet(ErrorFieldKey, errorField)
 }
 
 func (e *Event) String() string {

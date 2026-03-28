@@ -241,22 +241,18 @@ func TestCowMapCloneSharesReference(t *testing.T) {
 	assert.Equal(t, "aws", sharedCloud["provider"])
 }
 
-func TestCowMapMaterialize(t *testing.T) {
+func TestCowMapFields(t *testing.T) {
 	e := newCowEvent()
-	m := e.Materialize()
+	m := e.Fields()
 
-	// Materialized map has cloud as plain mapstr.M.
+	// Fields() returns cloud as plain mapstr.M (deep copy).
 	cloud, ok := m["cloud"].(mapstr.M)
 	assert.True(t, ok)
 	assert.Equal(t, "aws", cloud["provider"])
-}
 
-func TestCowMapMaterializeIsZeroCopy(t *testing.T) {
-	e := newCowEvent()
-	m := e.Materialize()
-
-	// The materialized cloud IS the shared reference.
-	assert.Equal(t, sharedCloud, m["cloud"])
+	// Mutating returned map doesn't corrupt shared data.
+	cloud["provider"] = "CORRUPTED"
+	assert.Equal(t, "aws", sharedCloud["provider"])
 }
 
 func TestCowMapMultipleCowFields(t *testing.T) {
