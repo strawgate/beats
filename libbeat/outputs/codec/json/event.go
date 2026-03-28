@@ -49,6 +49,6 @@ func makeEvent(index, version string, in *beat.Event) event {
 			Type:    "_doc",
 			Fields:  in.Meta,
 		},
-		Fields: in.Fields(),
+		Fields: in.FieldsUnsafe(),
 	}
 }

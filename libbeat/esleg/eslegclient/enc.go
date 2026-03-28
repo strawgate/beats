@@ -153,9 +153,9 @@ func (b *jsonEncoder) AddRaw(obj interface{}) error {
 	var err error
 	switch v := obj.(type) {
 	case beat.Event:
-		err = b.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.Fields()})
+		err = b.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.FieldsUnsafe()})
 	case *beat.Event:
-		err = b.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.Fields()})
+		err = b.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.FieldsUnsafe()})
 	case RawEncoding:
 		_, err = b.buf.Write(v.Encoding)
 	default:
@@ -243,9 +243,9 @@ func (g *gzipEncoder) AddRaw(obj interface{}) error {
 	var err error
 	switch v := obj.(type) {
 	case beat.Event:
-		err = g.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.Fields()})
+		err = g.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.FieldsUnsafe()})
 	case *beat.Event:
-		err = g.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.Fields()})
+		err = g.folder.Fold(event{Timestamp: v.Timestamp, Fields: v.FieldsUnsafe()})
 	case RawEncoding:
 		_, err = g.counter.Write(v.Encoding)
 	default:

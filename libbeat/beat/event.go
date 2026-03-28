@@ -125,21 +125,11 @@ func (e *Event) Fields() mapstr.M {
 }
 
 // SetFields sets the event's fields from a mapstr.M.
+// Takes ownership of the map — caller must not modify it after this call.
 func (e *Event) SetFields(m mapstr.M) {
-	if e.fields == nil {
-		e.fields = make(mapstr.M, defaultFieldsCap)
-	} else {
-		clear(e.fields)
-	}
-	e.fieldCount = 0
+	e.fields = m
+	e.fieldCount = len(m)
 	e.hasCow = false
-	for k, v := range m {
-		e.fields[k] = v
-		e.fieldCount++
-		if _, ok := v.(*cowMap); ok {
-			e.hasCow = true
-		}
-	}
 }
 
 // CloneFields returns a deep copy of fields. cowMap entries are shared
