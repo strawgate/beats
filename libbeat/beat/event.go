@@ -442,6 +442,19 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 
 		switch ev := existing.(type) {
 		case *cowMap:
+			if mode == updateModeNoOverwrite {
+				// Check if clone is needed: skip if all source keys exist.
+				allExist := true
+				for sk := range srcMap {
+					if _, ok := ev.shared[sk]; !ok {
+						allExist = false
+						break
+					}
+				}
+				if allExist {
+					continue
+				}
+			}
 			cloned := ev.shared.Clone()
 			switch mode {
 			case updateModeOverwrite:
