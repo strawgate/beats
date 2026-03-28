@@ -110,11 +110,14 @@ func (e *Event) Fields() mapstr.M {
 	}
 	c := make(mapstr.M, len(e.fields))
 	for k, v := range e.fields {
-		if cm, ok := v.(*cowMap); ok {
-			c[k] = cm.shared.Clone()
-		} else if m, ok := v.(mapstr.M); ok {
-			c[k] = m.Clone()
-		} else {
+		switch val := v.(type) {
+		case *cowMap:
+			c[k] = val.shared.Clone()
+		case microMap:
+			c[k] = val.ToMapStr()
+		case mapstr.M:
+			c[k] = val.Clone()
+		default:
 			c[k] = v
 		}
 	}
@@ -150,33 +153,25 @@ func (e *Event) CloneFields() mapstr.M {
 	}
 	c := make(mapstr.M, len(e.fields))
 	for k, v := range e.fields {
-		if _, ok := v.(*cowMap); ok {
-			c[k] = v // share cowMap reference
-		} else if m, ok := v.(mapstr.M); ok {
-			c[k] = m.Clone()
-		} else {
+		switch val := v.(type) {
+		case *cowMap:
+			c[k] = val // share cowMap reference
+		case microMap:
+			c[k] = val.Clone()
+		case mapstr.M:
+			c[k] = val.Clone()
+		default:
 			c[k] = v
 		}
 	}
 	return c
 }
 
-// FieldsUnsafe returns the fields with cowMap values unwrapped to their
-// shared references. No cloning — the returned map shares data with the
-// processor's cached state. Only safe for read-only consumers (encoder).
+// FieldsUnsafe returns the internal fields map directly. Values may be
+// *cowMap or microMap types. Only safe for consumers that understand
+// these types (e.g., the encoder with registered Folders).
 // Callers MUST NOT modify the returned map or any nested values.
 func (e *Event) FieldsUnsafe() mapstr.M {
-	if !e.hasCow {
-		return e.fields
-	}
-	// Unwrap cowMaps in place — safe since the event is about to be
-	// encoded and discarded.
-	for k, v := range e.fields {
-		if cm, ok := v.(*cowMap); ok {
-			e.fields[k] = cm.shared
-		}
-	}
-	e.hasCow = false
 	return e.fields
 }
 
@@ -209,20 +204,21 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return nil, mapstr.ErrKeyNotFound
 	}
 
-	// Check if top-level key holds a cowMap.
 	topKey, subKey := splitDot(key)
 	if val, ok := e.fields[topKey]; ok {
 		if subKey == "" {
 			switch v := val.(type) {
 			case *cowMap:
 				return v.shared.Clone(), nil
+			case microMap:
+				return v.ToMapStr(), nil
 			default:
 				return v, nil
 			}
 		}
-		// Dotted key into a cowMap.
-		if cm, ok := val.(*cowMap); ok {
-			result, err := cm.shared.GetValue(subKey)
+		switch v := val.(type) {
+		case *cowMap:
+			result, err := v.shared.GetValue(subKey)
 			if err != nil {
 				return nil, err
 			}
@@ -230,6 +226,8 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 				return m.Clone(), nil
 			}
 			return result, nil
+		case microMap:
+			return microMapGetDotted(v, subKey)
 		}
 	}
 
@@ -334,10 +332,22 @@ func (e *Event) Delete(key string) error {
 	}
 
 	if val, ok := e.fields[topKey]; ok {
-		if cm, ok := val.(*cowMap); ok {
-			cloned := cm.shared.Clone()
-			e.fields[topKey] = cloned
-			return cloned.Delete(subKey)
+		switch v := val.(type) {
+		case *cowMap:
+			mm := microMapFromMapStr(v.shared)
+			updated, err := microMapDeleteDotted(mm, subKey)
+			if err != nil {
+				return err
+			}
+			e.fields[topKey] = updated
+			return nil
+		case microMap:
+			updated, err := microMapDeleteDotted(v, subKey)
+			if err != nil {
+				return err
+			}
+			e.fields[topKey] = updated
+			return nil
 		}
 	}
 
@@ -365,8 +375,12 @@ func (e *Event) HasKey(key string) (bool, error) {
 		if subKey == "" {
 			return true, nil
 		}
-		if cm, ok := val.(*cowMap); ok {
-			return cm.shared.HasKey(subKey)
+		switch v := val.(type) {
+		case *cowMap:
+			return v.shared.HasKey(subKey)
+		case microMap:
+			_, err := microMapGetDotted(v, subKey)
+			return err == nil, nil
 		}
 	}
 
@@ -453,7 +467,6 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 		switch ev := existing.(type) {
 		case *cowMap:
 			if mode == updateModeNoOverwrite {
-				// Check if clone is needed: skip if all source keys exist.
 				allExist := true
 				for sk := range srcMap {
 					if _, ok := ev.shared[sk]; !ok {
@@ -465,14 +478,26 @@ func (e *Event) deepUpdate(d mapstr.M, mode updateMode) {
 					continue
 				}
 			}
-			cloned := ev.shared.Clone()
-			switch mode {
-			case updateModeOverwrite:
-				cloned.DeepUpdate(srcMap)
-			case updateModeNoOverwrite:
-				cloned.DeepUpdateNoOverwrite(srcMap)
+			// Clone as microMap instead of mapstr.M.
+			mm := microMapFromMapStr(ev.shared)
+			for sk, sv := range srcMap {
+				existing, found := mm.Get(sk)
+				if found && mode == updateModeNoOverwrite {
+					continue
+				}
+				_ = existing
+				mm = mm.Set(sk, convertNestedValue(sv))
 			}
-			e.fields[k] = cloned
+			e.fields[k] = mm
+		case microMap:
+			for sk, sv := range srcMap {
+				_, found := ev.Get(sk)
+				if found && mode == updateModeNoOverwrite {
+					continue
+				}
+				ev = ev.Set(sk, convertNestedValue(sv))
+			}
+			e.fields[k] = ev
 		case mapstr.M:
 			switch mode {
 			case updateModeOverwrite:
@@ -513,21 +538,28 @@ func (e *Event) ensureFields() {
 func (e *Event) putDotted(topKey, subKey string, v interface{}) (interface{}, error) {
 	existing, ok := e.fields[topKey]
 	if !ok {
+		// Create new nested structure as microMap.
 		newMap := mapstr.M{}
 		old, err := newMap.Put(subKey, v)
 		if err != nil {
 			return nil, err
 		}
-		e.fields[topKey] = newMap
+		e.fields[topKey] = microMapFromMapStr(newMap)
 		e.fieldCount++
 		return old, nil
 	}
 
 	switch ev := existing.(type) {
 	case *cowMap:
-		cloned := ev.shared.Clone()
-		e.fields[topKey] = cloned
-		return cloned.Put(subKey, v)
+		// Clone cowMap as microMap instead of mapstr.M.
+		mm := microMapFromMapStr(ev.shared)
+		updated := microMapSetDotted(mm, subKey, v)
+		e.fields[topKey] = updated
+		return nil, nil // old value not available from microMap path
+	case microMap:
+		updated := microMapSetDotted(ev, subKey, v)
+		e.fields[topKey] = updated
+		return nil, nil
 	case mapstr.M:
 		return ev.Put(subKey, v)
 	default:
@@ -536,7 +568,7 @@ func (e *Event) putDotted(topKey, subKey string, v interface{}) (interface{}, er
 		if err != nil {
 			return nil, err
 		}
-		e.fields[topKey] = newMap
+		e.fields[topKey] = microMapFromMapStr(newMap)
 		return old, nil
 	}
 }
@@ -606,6 +638,95 @@ func (e *Event) FlattenKeys() *[]string {
 		return nil
 	}
 	return f.FlattenKeys()
+}
+
+// microMapGetDotted navigates a dotted key through nested microMaps.
+func microMapGetDotted(mm microMap, key string) (interface{}, error) {
+	topKey, subKey := splitDot(key)
+	val, ok := mm.Get(topKey)
+	if !ok {
+		return nil, mapstr.ErrKeyNotFound
+	}
+	if subKey == "" {
+		if nested, ok := val.(microMap); ok {
+			return nested.ToMapStr(), nil
+		}
+		return val, nil
+	}
+	switch v := val.(type) {
+	case microMap:
+		return microMapGetDotted(v, subKey)
+	case mapstr.M:
+		return v.GetValue(subKey)
+	default:
+		return nil, mapstr.ErrKeyNotFound
+	}
+}
+
+// microMapSetDotted navigates a dotted key through nested microMaps,
+// creating structure as needed. Returns the updated root microMap.
+func microMapSetDotted(mm microMap, key string, value interface{}) microMap {
+	topKey, subKey := splitDot(key)
+	if subKey == "" {
+		return mm.Set(topKey, value)
+	}
+	existing, ok := mm.Get(topKey)
+	if !ok {
+		// Create nested microMap.
+		nested := microMap(&mm1{k: subKey, v: value})
+		// But subKey might itself have dots — handle recursively.
+		if subTop, subSub := splitDot(subKey); subSub != "" {
+			nested = microMapSetDotted(&mm1{k: subTop, v: nil}, subSub, value)
+			nested = nested.Delete(subTop)
+			nested = nested.Set(subTop, microMapSetDotted(&mm1{}, subKey, value))
+			// Simpler: just use a single mm1 and let it grow.
+		}
+		// Actually, simplest approach: create via mapstr.M.Put then convert.
+		newMap := mapstr.M{}
+		_, _ = newMap.Put(subKey, value)
+		return mm.Set(topKey, microMapFromMapStr(newMap))
+	}
+	switch v := existing.(type) {
+	case microMap:
+		updated := microMapSetDotted(v, subKey, value)
+		return mm.Set(topKey, updated)
+	case mapstr.M:
+		_, _ = v.Put(subKey, value)
+		return mm
+	default:
+		newMap := mapstr.M{}
+		_, _ = newMap.Put(subKey, value)
+		return mm.Set(topKey, microMapFromMapStr(newMap))
+	}
+}
+
+// microMapDeleteDotted deletes a dotted key from a microMap.
+func microMapDeleteDotted(mm microMap, key string) (microMap, error) {
+	topKey, subKey := splitDot(key)
+	if subKey == "" {
+		_, found := mm.Get(topKey)
+		if !found {
+			return mm, mapstr.ErrKeyNotFound
+		}
+		return mm.Delete(topKey), nil
+	}
+	val, found := mm.Get(topKey)
+	if !found {
+		return mm, mapstr.ErrKeyNotFound
+	}
+	switch v := val.(type) {
+	case microMap:
+		updated, err := microMapDeleteDotted(v, subKey)
+		if err != nil {
+			return mm, err
+		}
+		return mm.Set(topKey, updated), nil
+	case mapstr.M:
+		err := v.Delete(subKey)
+		return mm, err
+	default:
+		return mm, mapstr.ErrKeyNotFound
+	}
 }
 
 func splitDot(key string) (topKey, subKey string) {
