@@ -157,6 +157,11 @@ func (e *Event) CloneFields() mapstr.M {
 	return c
 }
 
+// FieldsLen returns the number of top-level fields without allocating.
+func (e *Event) FieldsLen() int {
+	return len(e.fields)
+}
+
 // FieldsUnsafe returns the internal fields map directly. Values may be
 // *cowMap or microMap types. Only safe for consumers that understand
 // these types (e.g., the encoder with registered Folders).

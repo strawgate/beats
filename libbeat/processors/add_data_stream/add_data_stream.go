@@ -80,7 +80,7 @@ func (p *AddDataStream) Run(event *beat.Event) (*beat.Event, error) {
 			eventDataStream.Dataset = customDataset.(string)
 		}
 	}
-	if event.Fields() == nil {
+	if event.FieldsLen() == 0 {
 		event.SetFields(mapstr.M{})
 	}
 	event.PutValue("event.dataset", eventDataStream.Dataset)

@@ -106,7 +106,7 @@ func (e *eventEncoder) encode_publisher_event(event publisher.Event) ([]byte, er
 		Timestamp: event.Content.Timestamp.UTC().UnixNano(),
 		Flags:     uint32(event.Flags),
 		Meta:      event.Content.Meta,
-		Fields:    event.Content.Fields(),
+		Fields:    event.Content.FieldsUnsafe(),
 	})
 	if err != nil {
 		e.reset()

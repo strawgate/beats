@@ -342,7 +342,7 @@ func (b *builder) Create(cfg beat.ProcessingConfig, drop bool, paths *paths.Path
 	tags = append(tags, cfg.EventMetadata.Tags...)
 	if len(tags) > 0 {
 		processors.add(newProcessor("add_tags", func(event *beat.Event) (*beat.Event, error) {
-			_ = mapstr.AddTagsWithKey(event.Fields(), "tags", tags)
+			_ = mapstr.AddTagsWithKey(event.FieldsUnsafe(), "tags", tags)
 			return event, nil
 		}))
 	}
