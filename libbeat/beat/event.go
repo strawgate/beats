@@ -199,6 +199,22 @@ func (e *Event) GetValue(key string) (interface{}, error) {
 		return nil, mapstr.ErrKeyNotFound
 	}
 
+	// Fast path: top-level key, no dots.
+	if strings.IndexByte(key, '.') < 0 {
+		val, ok := e.fields[key]
+		if !ok {
+			return nil, mapstr.ErrKeyNotFound
+		}
+		switch v := val.(type) {
+		case *cowMap:
+			return v.shared.Clone(), nil
+		case microMap:
+			return v.ToMapStr(), nil
+		default:
+			return v, nil
+		}
+	}
+
 	topKey, subKey := splitDot(key)
 	if val, ok := e.fields[topKey]; ok {
 		if subKey == "" {
@@ -265,38 +281,24 @@ func (e *Event) PutValue(key string, v interface{}) (interface{}, error) {
 	return e.putDotted(topKey, subKey, v)
 }
 
-func (e *Event) PutValueQuiet(key string, v interface{}) error {
-	if key == TimestampFieldKey {
-		_, err := e.setTimestamp(v)
-		return err
-	}
-	if key == MetadataFieldKey {
-		return ErrAlterMetadataKey
-	}
-	if subKey, ok := e.metadataSubKey(key); ok {
-		if e.Meta == nil {
-			e.Meta = mapstr.M{}
-		}
-		_, err := e.Meta.Put(subKey, v)
-		return err
-	}
-
+// SetField sets a top-level key directly without dot splitting.
+// Matches the old event.Fields[key] = value behavior.
+// Does not handle @timestamp or @metadata — use PutValue for those.
+func (e *Event) SetField(key string, v interface{}) {
 	e.ensureFields()
-	topKey, subKey := splitDot(key)
-
-	if subKey == "" {
-		if _, exists := e.fields[topKey]; !exists {
-			e.fieldCount++
-		}
-		e.fields[topKey] = v
-		if _, ok := v.(*cowMap); ok {
-			e.hasCow = true
-		}
-		return nil
+	if _, exists := e.fields[key]; !exists {
+		e.fieldCount++
 	}
+	e.fields[key] = v
+	if _, ok := v.(*cowMap); ok {
+		e.hasCow = true
+	}
+}
 
-	_, err := e.putDotted(topKey, subKey, v)
-	return err
+// PutValueQuiet is an alias for SetField for backward compatibility.
+func (e *Event) PutValueQuiet(key string, v interface{}) error {
+	e.SetField(key, v)
+	return nil
 }
 
 func (e *Event) Delete(key string) error {
