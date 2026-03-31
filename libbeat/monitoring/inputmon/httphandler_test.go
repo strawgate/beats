@@ -152,7 +152,7 @@ func BenchmarkHandlers(b *testing.B) {
 	h := &handler{globalReg: reg}
 
 	b.Run("allInputs", func(b *testing.B) {
-		req := httptest.NewRequest(http.MethodGet, "/inputs/", nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/inputs/", nil)
 		resp := httptest.NewRecorder()
 
 		b.ResetTimer()
