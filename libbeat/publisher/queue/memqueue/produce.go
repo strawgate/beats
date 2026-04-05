@@ -18,6 +18,8 @@
 package memqueue
 
 import (
+	"sync/atomic"
+
 	"github.com/elastic/beats/v7/libbeat/publisher/queue"
 	"github.com/elastic/elastic-agent-libs/logp"
 )
@@ -35,11 +37,12 @@ type ackProducer struct {
 }
 
 type openState struct {
-	log          *logp.Logger
-	done         chan struct{}
-	queueClosing <-chan struct{}
-	events       chan pushRequest
-	encoder      queue.Encoder
+	log              *logp.Logger
+	done             chan struct{}
+	queueClosing     <-chan struct{}
+	events           chan pushRequest
+	encoder          queue.Encoder
+	activePublishers *atomic.Int32
 }
 
 // producerID stores the order of events within a single producer, so multiple
@@ -57,11 +60,12 @@ type ackHandler func(count int)
 
 func newProducer(b *broker, cb ackHandler, encoder queue.Encoder) queue.Producer {
 	openState := openState{
-		log:          b.logger,
-		done:         make(chan struct{}),
-		queueClosing: b.closingChan,
-		events:       b.pushChan,
-		encoder:      encoder,
+		log:              b.logger,
+		done:             make(chan struct{}),
+		queueClosing:     b.closingChan,
+		events:           b.pushChan,
+		encoder:          encoder,
+		activePublishers: &b.activePublishers,
 	}
 
 	if cb != nil {
@@ -73,10 +77,9 @@ func newProducer(b *broker, cb ackHandler, encoder queue.Encoder) queue.Producer
 }
 
 func (p *forgetfulProducer) makePushRequest(event queue.Entry) pushRequest {
-	resp := make(chan queue.EntryID, 1)
 	return pushRequest{
 		event: event,
-		resp:  resp}
+	}
 }
 
 func (p *forgetfulProducer) Publish(event queue.Entry) (queue.EntryID, bool) {
@@ -92,14 +95,13 @@ func (p *forgetfulProducer) Close() {
 }
 
 func (p *ackProducer) makePushRequest(event queue.Entry) pushRequest {
-	resp := make(chan queue.EntryID, 1)
 	return pushRequest{
 		event:    event,
 		producer: p,
 		// We add 1 to the id so the default lastACK of 0 is a
 		// valid initial state and 1 is the first real id.
 		producerID: producerID(p.producedCount + 1),
-		resp:       resp}
+	}
 }
 
 func (p *ackProducer) Publish(event queue.Entry) (queue.EntryID, bool) {
@@ -132,9 +134,19 @@ func (st *openState) publish(req pushRequest) (queue.EntryID, bool) {
 	if st.encoder != nil {
 		req.event, req.eventSize = st.encoder.EncodeEntry(req.event)
 	}
+	st.activePublishers.Add(1)
+	defer st.activePublishers.Add(-1)
+	// Fast-path rejection: once the queue starts closing, do not accept
+	// new events. Events already in pushChan are drained by the runloop.
+	select {
+	case <-st.queueClosing:
+		st.events = nil
+		return 0, false
+	default:
+	}
 	select {
 	case st.events <- req:
-		return st.handlePendingResponse(req.resp)
+		return 0, true
 	case <-st.done:
 		st.events = nil
 		return 0, false
@@ -150,9 +162,18 @@ func (st *openState) tryPublish(req pushRequest) (queue.EntryID, bool) {
 	if st.encoder != nil {
 		req.event, req.eventSize = st.encoder.EncodeEntry(req.event)
 	}
+	st.activePublishers.Add(1)
+	defer st.activePublishers.Add(-1)
+	// Fast-path rejection: same as publish above.
+	select {
+	case <-st.queueClosing:
+		st.events = nil
+		return 0, false
+	default:
+	}
 	select {
 	case st.events <- req:
-		return st.handlePendingResponse(req.resp)
+		return 0, true
 	case <-st.done:
 		st.events = nil
 		return 0, false
@@ -160,32 +181,4 @@ func (st *openState) tryPublish(req pushRequest) (queue.EntryID, bool) {
 		st.log.Debugf("Dropping event, queue is blocked")
 		return 0, false
 	}
-}
-
-func (st *openState) handlePendingResponse(respChan chan queue.EntryID) (queue.EntryID, bool) {
-	// The events channel is buffered, which means we may successfully
-	// write to it even if the queue is shutting down. To avoid blocking
-	// forever during shutdown, we also have to wait on the queue's
-	// shutdown channel.
-	select {
-	case resp := <-respChan:
-		return resp, true
-	case <-st.queueClosing:
-	}
-
-	// Clear the request channel so we can't write to it again
-	st.events = nil
-
-	// Once the queue starts closing, it will not handle any more push
-	// requests, however it may have handled ours before the closing
-	// channel was triggered (and both may have arrived concurrently
-	// at the select statement above). So to know whether our entry was
-	// accepted we also need to check if there's a buffered response in
-	// our channel.
-	select {
-	case resp := <-respChan:
-		return resp, true
-	default:
-	}
-	return 0, false
 }

@@ -21,6 +21,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/publisher/queue"
@@ -55,6 +56,12 @@ type broker struct {
 
 	// The factory used to create an event encoder when creating a producer
 	encoderFactory queue.EncoderFactory
+
+	// activePublishers tracks goroutines currently inside publish/tryPublish.
+	// The shutdown drain waits for this to reach 0 before cancelling the
+	// context, ensuring every committed event (Publish returned true) has
+	// been inserted into pushChan and can be drained.
+	activePublishers atomic.Int32
 
 	///////////////////////////
 	// api channels

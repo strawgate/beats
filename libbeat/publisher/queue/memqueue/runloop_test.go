@@ -20,7 +20,6 @@ package memqueue
 import (
 	"context"
 	"io"
-	"sync"
 	"testing"
 	"time"
 
@@ -53,19 +52,20 @@ func TestFlushSettingsDoNotBlockFullBatches(t *testing.T) {
 
 	producer := newProducer(broker, nil, nil)
 	rl := broker.runLoop
-	// iterLock is used to ensure distinct runIteration calls can never overlap
-	iterLock := sync.Mutex{}
+	// Publish 100 events asynchronously (pushChan buffer is 10, so the
+	// goroutine will block periodically). Drain one event per
+	// runIteration call.
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			_, _ = producer.Publish(i)
+		}
+		close(done)
+	}()
 	for i := 0; i < 100; i++ {
-		// Pair each publish call with an iteration of the run loop so we
-		// get a response.
-		go func() {
-			iterLock.Lock()
-			rl.runIteration()
-			iterLock.Unlock()
-		}()
-		_, ok := producer.Publish(i)
-		require.True(t, ok, "Queue publish call must succeed")
+		rl.runIteration()
 	}
+	<-done
 
 	// The queue now has 100 events, but MaxGetRequest is 500.
 	// In the old queue, a Get call now would block until the flush
@@ -76,11 +76,7 @@ func TestFlushSettingsDoNotBlockFullBatches(t *testing.T) {
 		// there's a logical error.
 		_, _ = broker.Get(100)
 	}()
-	// Still have to lock here even though we aren't running asynchronously,
-	// since it's possible that the last asynchronous call is still running.
-	iterLock.Lock()
 	rl.runIteration()
-	iterLock.Unlock()
 	assert.Nil(t, rl.pendingGetRequest, "Queue should have no pending get request since the request should succeed immediately")
 	assert.Equal(t, 100, rl.consumedCount, "Queue should have a consumedCount of 100 after a consumer requested all its events")
 }
@@ -102,13 +98,18 @@ func TestFlushSettingsBlockPartialBatches(t *testing.T) {
 
 	producer := newProducer(broker, nil, nil)
 	rl := broker.runLoop
+	// Same approach: async publish, sync drain.
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 100; i++ {
+			_, _ = producer.Publish("some event")
+		}
+		close(done)
+	}()
 	for i := 0; i < 100; i++ {
-		// Pair each publish call with an iteration of the run loop so we
-		// get a response.
-		go rl.runIteration()
-		_, ok := producer.Publish("some event")
-		require.True(t, ok, "Queue publish call must succeed")
+		rl.runIteration()
 	}
+	<-done
 
 	// The queue now has 100 events, and a positive flush timeout, so a
 	// request for 101 events should block.

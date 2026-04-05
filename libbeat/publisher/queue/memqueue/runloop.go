@@ -18,6 +18,7 @@
 package memqueue
 
 import (
+	"runtime"
 	"time"
 
 	"github.com/elastic/beats/v7/libbeat/publisher/queue"
@@ -161,10 +162,28 @@ func (l *runLoop) runIteration() {
 		l.pendingGetRequest = nil
 	}
 
-	// Check for final shutdown (if we are closing and the event buffer is
-	// completely drained)
+	// Check for final shutdown: closing, ring buffer drained, and no
+	// committed events remaining in pushChan.
 	if l.closing && l.eventCount == 0 {
-		l.broker.ctxCancel()
+		// Drain any committed events that racing producers may have
+		// placed in pushChan between close(closingChan) and reaching
+		// the fast-path rejection in publish().
+		for {
+			select {
+			case req := <-l.broker.pushChan:
+				l.handleInsert(&req)
+			default:
+				if l.broker.activePublishers.Load() > 0 {
+					runtime.Gosched()
+					continue
+				}
+				if l.eventCount > 0 {
+					return
+				}
+				l.broker.ctxCancel()
+				return
+			}
+		}
 	}
 }
 
@@ -229,8 +248,6 @@ func (l *runLoop) handleDelete(count int) {
 
 func (l *runLoop) handleInsert(req *pushRequest) {
 	l.insert(req, l.nextEntryID)
-	// Send back the new event id.
-	req.resp <- l.nextEntryID
 
 	l.nextEntryID++
 	l.eventCount++
