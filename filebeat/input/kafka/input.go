@@ -415,19 +415,32 @@ func (l *listFromFieldReader) returnFromBuffer() (reader.Message, error) {
 
 // parseMultipleMessages will try to split the message into multiple ones based on the group field provided by the configuration
 func (l *listFromFieldReader) parseMultipleMessages(bMessage []byte) []string {
-	var obj map[string][]interface{}
+	var obj map[string]interface{}
 	err := json.Unmarshal(bMessage, &obj)
 	if err != nil {
-		l.log.Errorw(fmt.Sprintf("Kafka desirializing multiple messages using the group object %s", l.field), "error", err)
+		l.log.Errorw(fmt.Sprintf("Kafka deserializing message for field %s", l.field), "error", err)
 		return []string{}
 	}
+
+	fieldValue, ok := obj[l.field]
+	if !ok {
+		l.log.Errorf("Kafka configured field '%s' not found in message", l.field)
+		return []string{}
+	}
+
+	messagesList, ok := fieldValue.([]interface{})
+	if !ok {
+		l.log.Errorf("Kafka configured field '%s' is not a JSON array", l.field)
+		return []string{}
+	}
+
 	var messages []string
-	for _, ms := range obj[l.field] {
+	for _, ms := range messagesList {
 		js, err := json.Marshal(ms)
 		if err == nil {
 			messages = append(messages, string(js))
 		} else {
-			l.log.Errorw(fmt.Sprintf("Kafka serializing message %s", ms), "error", err)
+			l.log.Errorw(fmt.Sprintf("Kafka serializing message from field %s", l.field), "error", err)
 		}
 	}
 	return messages
